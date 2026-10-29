@@ -16,6 +16,7 @@ import { useAppStore, useSettings } from '../store';
  */
 export function SettingsScreen() {
   const closeSheet = useAppStore((s) => s.closeSheet);
+  const openSheet = useAppStore((s) => s.openSheet);
   const canRecover = useAppStore((s) => s.canRecover);
   const settings = useSettings();
   const setSettings = useAppStore((s) => s.setSettings);
@@ -116,6 +117,18 @@ export function SettingsScreen() {
             checked={settings.autoBackup}
             onChange={(autoBackup) => update({ autoBackup })}
           />
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => openSheet({ kind: 'export', from: 'settings' })}>
+              导出账户
+            </Button>
+            <Button variant="secondary" onClick={() => openSheet({ kind: 'import', from: 'settings' })}>
+              导入账户
+            </Button>
+          </div>
+          <p className="text-[11px] leading-relaxed text-fg-muted">
+            导出的文件可以搬到另一台电脑，或者重装扩展之后再用。
+            导入只往里加：同一个密钥的账户会跳过，已有的永远不会被覆盖。
+          </p>
         </Section>
 
         <Section title="关于">

@@ -40,7 +40,10 @@ export type Sheet =
   | { kind: 'add' }
   | { kind: 'edit'; id: string }
   | { kind: 'delete'; id: string }
-  | { kind: 'settings' };
+  | { kind: 'settings' }
+  // 导出入是从设置里进来的：返回时回到设置，而不是直接掉回列表
+  | { kind: 'export'; from?: 'settings' }
+  | { kind: 'import'; from?: 'settings' };
 
 /** 表单最终要落成的一次写入；新增和编辑只差一个 id */
 export type AccountDraft = OtpAuthParams;
@@ -103,6 +106,8 @@ interface AppState {
   reorderAccount: (id: string, beforeId: string | null) => Promise<void>;
   /** 已解锁时换密码，返回新恢复码（需当场展示） */
   changePassword: (current: string, next: string) => Promise<string>;
+  /** 导入：只做加法，返回真正新增的条数 */
+  importAccounts: (drafts: readonly OtpAuthParams[]) => Promise<number>;
 
   setQuery: (query: string) => void;
   setView: (view: ViewMode) => void;
@@ -282,6 +287,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   reorderAccount: async (id, beforeId) => {
     await get().mutate((vault) => reorderInVault(vault, id, beforeId));
+  },
+
+  importAccounts: async (drafts) => {
+    if (drafts.length === 0) return 0;
+    // 整批一次落盘：中途抛错时 fn 还没返回，界面与存储都不会落到半截状态
+    await get().mutate((vault) =>
+      drafts.reduce((acc, draft) => addAccountToVault(acc, draft), vault),
+    );
+    set({ sheet: null });
+    get().showToast(`已导入 ${drafts.length} 个账户`);
+    return drafts.length;
   },
 
   changePassword: async (current, next) => {

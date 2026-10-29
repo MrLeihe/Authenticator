@@ -24,6 +24,7 @@ export const MIN_PASSWORD_LENGTH = 8;
 /** 用途隔离标签，写进 GCM 的 additionalData */
 const AAD_VAULT = '2fa/vault/v1';
 const AAD_DEK = '2fa/dek/v1';
+const AAD_EXPORT = '2fa/export/v1';
 const AAD_RECOVERY_LABEL = '2fa/recovery/v1';
 
 export type CryptoFailure =
@@ -239,6 +240,27 @@ export async function decryptJson<T>(
   blob: SealedBlob,
 ): Promise<T> {
   const plain = await open(key, blob, AAD_VAULT);
+  try {
+    return JSON.parse(new TextDecoder().decode(plain)) as T;
+  } catch {
+    throw new CryptoError('malformed', '解密后不是合法 JSON');
+  }
+}
+
+/**
+ * 导出文件的内容加密。
+ *
+ * AAD 与 vault 密文不同，所以两者**互相搬不动**：把保险库里那团密文塞进
+ * 导出文件，或者反过来把导出文件塞进存储，都只会得到 `wrong-key`，
+ * 而不是"看起来解开了一堆别的东西"。
+ */
+export async function sealExport(key: CryptoKey | Uint8Array, data: unknown): Promise<SealedBlob> {
+  const plaintext = new TextEncoder().encode(JSON.stringify(data));
+  return seal(key, plaintext, AAD_EXPORT);
+}
+
+export async function openExport<T>(key: CryptoKey | Uint8Array, blob: SealedBlob): Promise<T> {
+  const plain = await open(key, blob, AAD_EXPORT);
   try {
     return JSON.parse(new TextDecoder().decode(plain)) as T;
   } catch {

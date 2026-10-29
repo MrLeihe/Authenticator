@@ -97,6 +97,9 @@ function splitLabel(label: string): { issuer: string; account: string } {
   };
 }
 
+/** 迁移码里 `name` 字段的写法与本模块的 label 完全一致，共用一套切分规则 */
+export { splitLabel as splitOtpauthLabel };
+
 export function parseOtpauth(input: string): OtpAuthParams {
   const uri = input.trim();
   if (uri.length > MAX_URI_LENGTH) {
@@ -192,4 +195,28 @@ export function findOtpauthUris(text: string): string[] {
     if (cleaned.length > 'otpauth://'.length) found.push(cleaned);
   }
   return found;
+}
+
+/**
+ * 生成 `otpauth://` 地址，与 `parseOtpauth` 成对。
+ *
+ * 两条刻意的选择：
+ * 1. `algorithm` / `digits` / `period` **总是写出来**，不靠"缺省即 6 位 30 秒"这种
+ *    隐式约定 —— 导出文件要能被别的验证器原样读走，少一个字段就可能被读成 6 位。
+ * 2. 手工拼 query 而不用 `URLSearchParams`：后者把空格编成 `+`，
+ *    虽然我们的解析器会把 `+` 还原成空格，但不少第三方实现不会。
+ */
+export function buildOtpauth(params: OtpAuthParams): string {
+  const label = params.issuer
+    ? `${encodeURIComponent(params.issuer)}:${encodeURIComponent(params.account)}`
+    : encodeURIComponent(params.account);
+
+  const pairs: Array<[string, string]> = [['secret', params.secret]];
+  if (params.issuer) pairs.push(['issuer', params.issuer]);
+  pairs.push(['algorithm', params.algorithm]);
+  pairs.push(['digits', String(params.digits)]);
+  pairs.push(['period', String(params.period)]);
+
+  const query = pairs.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
+  return `otpauth://totp/${label}?${query}`;
 }

@@ -4,6 +4,8 @@ import { useAutoLock } from '@/ui/hooks/useAutoLock';
 import { AddAccountScreen } from '@/ui/screens/AddAccountScreen';
 import { DeleteAccountScreen } from '@/ui/screens/DeleteAccountScreen';
 import { EditAccountScreen } from '@/ui/screens/EditAccountScreen';
+import { ExportScreen } from '@/ui/screens/ExportScreen';
+import { ImportScreen } from '@/ui/screens/ImportScreen';
 import { ListScreen } from '@/ui/screens/ListScreen';
 import { LockScreen } from '@/ui/screens/LockScreen';
 import { OnboardScreen } from '@/ui/screens/OnboardScreen';
@@ -69,6 +71,10 @@ function SheetView({ sheet }: { sheet: Sheet }) {
       return <DeleteAccountScreen id={sheet.id} />;
     case 'settings':
       return <SettingsScreen />;
+    case 'export':
+      return <ExportScreen from={sheet.from} />;
+    case 'import':
+      return <ImportScreen from={sheet.from} />;
   }
 }
 
