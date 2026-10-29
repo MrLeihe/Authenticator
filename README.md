@@ -105,4 +105,4 @@ src/
 
 ## License
 
-MIT。`LICENSE` 文件会在首次公开发布前补充。
+[MIT](LICENSE) © 2026 MrLeihe

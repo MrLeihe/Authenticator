@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "A local-only TOTP authenticator browser extension.",
+  "license": "MIT",
   "engines": {
     "node": ">=20"
   },
