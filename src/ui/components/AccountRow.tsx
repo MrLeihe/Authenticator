@@ -1,0 +1,183 @@
+import { memo, useCallback } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import { formatCode } from '@/core/totp';
+import type { Account } from '@/core/types';
+import { copyText, scheduleClipboardClear } from '@/platform/clipboard';
+import { useAppStore, type ViewMode } from '../store';
+import { Countdown } from './Countdown';
+import { CopyIcon, PencilIcon, GripIcon, TrashIcon } from './Icons';
+import { Initials } from './Initials';
+
+const WARN_AT = 4;
+
+interface AccountRowProps {
+  account: Account;
+  code: string;
+  remaining: number;
+  view: ViewMode;
+  showInitials: boolean;
+  /** 打码模式下正在临时揭示的行 */
+  revealed: boolean;
+  onReveal: (id: string | null) => void;
+}
+
+/**
+ * 账户行。正常/打码 92px 两行，紧凑 44px 单行。
+ *
+ * 整行点击 = 复制；打码态整行点击 = 先揭示（5 秒后由 store 自动收回）。
+ * 右侧的编辑/删除是真按钮，所以外层不能用 <button>（嵌套按钮非法），
+ * 改 role="button" + 键盘处理。
+ */
+export const AccountRow = memo(function AccountRow({
+  account,
+  code,
+  remaining,
+  view,
+  showInitials,
+  revealed,
+  onReveal,
+}: AccountRowProps) {
+  const showToast = useAppStore((s) => s.showToast);
+  const clearSeconds = useAppStore((s) => s.settings.clipboardClearSeconds);
+  const compact = view === 'compact';
+  const masked = view === 'masked' && !revealed;
+  const invalid = code === '';
+  // 打码/无效时不跟着倒计时变橙：橙色的含义是"这串码快过期了"，
+  // 而当码根本没显示时，这个提示只会让人以为出了问题
+  const hidden = masked || invalid;
+  const urgent = !hidden && remaining <= WARN_AT;
+
+  const copy = useCallback(async () => {
+    if (invalid) {
+      showToast('密钥无效，无法生成验证码', 'danger');
+      return;
+    }
+    const ok = await copyText(code);
+    if (ok) {
+      showToast('已复制验证码');
+      scheduleClipboardClear(clearSeconds);
+    } else {
+      showToast('复制失败', 'danger');
+    }
+  }, [code, invalid, clearSeconds, showToast]);
+
+  const activate = useCallback(() => {
+    if (masked) {
+      onReveal(account.id);
+      return;
+    }
+    void copy();
+  }, [masked, onReveal, account.id, copy]);
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      activate();
+    }
+  };
+
+  const title = account.account ? `${account.issuer}：${account.account}` : account.issuer;
+  const display = masked ? '••• •••' : invalid ? '———' : formatCode(code);
+  const codeClass = hidden ? 'text-fg-muted' : urgent ? 'text-warn' : 'text-code';
+
+  const actions = (
+    <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+      <IconButton label="置顶排序" onClick={(e) => e.stopPropagation()}>
+        <GripIcon size={14} />
+      </IconButton>
+      <IconButton
+        label="编辑"
+        onClick={(e) => {
+          e.stopPropagation();
+          showToast('编辑功能在 P4 接入');
+        }}
+      >
+        <PencilIcon size={14} />
+      </IconButton>
+      <IconButton
+        label="删除"
+        onClick={(e) => {
+          e.stopPropagation();
+          showToast('删除功能在 P4 接入');
+        }}
+      >
+        <TrashIcon size={14} />
+      </IconButton>
+    </div>
+  );
+
+  return (
+    <div
+      className={`row-divider group relative ${compact ? 'h-11' : 'h-[92px]'}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${title}，${masked ? '已隐藏' : '点击复制验证码'}`}
+      onClick={activate}
+      onKeyDown={onKeyDown}
+    >
+      {compact ? (
+        /* 紧凑模式：一行读完 —— 弹出的窗口里能多塞好几个账户。
+           这里故意不放编辑/删除按钮：塞进去会让圆环在 hover 时左右横跳，
+           而紧凑模式本来就是"只想快速抄一串码"，管理动作留给正常模式。 */
+        <div className="flex h-full items-center gap-3 px-4 transition-colors duration-150 group-hover:bg-surface-alt/60">
+          <span className="truncate text-[13px] text-fg">{title}</span>
+          <span className={`code ml-auto shrink-0 text-[17px] ${codeClass}`} dir="ltr">
+            {display}
+          </span>
+          <Countdown
+            remaining={remaining}
+            period={account.period}
+            warnAt={WARN_AT}
+            size={18}
+            showNumber={false}
+          />
+        </div>
+      ) : (
+        <div className="flex h-full w-full flex-col justify-center gap-1 px-4 py-3 transition-colors duration-150 group-hover:bg-surface-alt/60">
+          {/* 第一行：首字母 + 账户名 + hover 图标 */}
+          <div className="flex min-w-0 items-center gap-2.5">
+            {showInitials && <Initials issuer={account.issuer} account={account.account} />}
+            <span className="truncate text-[14px] font-medium text-fg">{title}</span>
+            {actions}
+          </div>
+
+          {/* 第二行：验证码 + 复制图标 + 倒计时环 */}
+          <div className="flex items-end justify-between">
+            <span className={`code transition-colors duration-200 ${codeClass}`} dir="ltr">
+              {display}
+            </span>
+
+            <div className="flex items-center gap-2.5 pb-0.5">
+              <CopyIcon
+                size={14}
+                className="text-fg-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+              />
+              <Countdown remaining={remaining} period={account.period} warnAt={WARN_AT} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+function IconButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: (e: MouseEvent) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className="rounded-[6px] p-1 text-fg-muted transition-colors duration-150 hover:bg-surface-alt hover:text-fg"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}

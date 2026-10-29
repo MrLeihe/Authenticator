@@ -20,6 +20,8 @@ export default {
         'fg-muted': 'rgb(var(--fg-muted) / <alpha-value>)',
         accent: 'rgb(var(--accent) / <alpha-value>)',
         'accent-press': 'rgb(var(--accent-press) / <alpha-value>)',
+        // 验证码正文/圆环专用：暗色下要比按钮蓝更亮，否则黑底上数字发糊
+        code: 'rgb(var(--code) / <alpha-value>)',
         warn: 'rgb(var(--warn) / <alpha-value>)',
         success: 'rgb(var(--success) / <alpha-value>)',
         danger: 'rgb(var(--danger) / <alpha-value>)',

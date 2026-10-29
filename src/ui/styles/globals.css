@@ -40,6 +40,16 @@
   --success-rgb: 52 199 89;
   --danger-rgb: 255 59 48;
 
+  /* 首字母头像底色：按账户名 hash 取一个，保证同一账户颜色稳定 */
+  --avatar-1: 255 59 48;
+  --avatar-2: 255 149 0;
+  --avatar-3: 52 199 89;
+  --avatar-4: 0 122 255;
+  --avatar-5: 88 86 214;
+  --avatar-6: 175 82 222;
+  --avatar-7: 255 45 85;
+  --avatar-8: 48 176 199;
+
   /* 圆角 */
   --r-card: 16px;
   --r-input: 8px;
@@ -59,6 +69,7 @@
   --fg-muted: var(--gray-500);
   --accent: var(--accent-500);
   --accent-press: var(--accent-600);
+  --code: var(--accent-500);
   --warn: var(--warn-rgb);
   --success: var(--success-rgb);
   --danger: var(--danger-rgb);
@@ -76,6 +87,9 @@
   --fg-muted: var(--dark-400);
   --accent: var(--accent-400);
   --accent-press: var(--accent-500);
+  /* 黑底上 accent-400 的对比度只有 4.3:1，24px 等宽数字会发糊，提亮一档 */
+  --code: var(--accent-300);
+  --warn: 255 159 10;
   --success: 48 209 88;
 
   color-scheme: dark;
@@ -116,7 +130,7 @@
 @layer components {
   /* 验证码：24px 等宽、3+3 分组、永远 LTR */
   .code {
-    @apply font-digit text-digit tabular-nums text-accent;
+    @apply font-digit text-digit tabular-nums text-code;
     direction: ltr;
     unicode-bidi: isolate;
   }

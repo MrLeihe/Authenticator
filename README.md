@@ -10,21 +10,23 @@
 | --- | --- | --- |
 | P0 | 脚手架（Vite + React + MV3） | ✅ 完成 |
 | P1 | 核心算法（base32 / HOTP / TOTP） | ✅ 完成 |
-| P2 | 主界面（列表 / 倒计时 / 复制） | ⏳ 进行中 |
-| P3 | 本地保险库 + 可选加密 | 计划中 |
+| P2 | 主界面（列表 / 倒计时 / 复制） | ✅ 完成 |
+| P3 | 本地保险库 + 可选加密 | ⏳ 进行中 |
 | P4 | 增删改账户 | 计划中 |
 | P5 | 导入导出（otpauth / 迁移协议） | 计划中 |
 | P6 | 细节打磨 | 计划中 |
 | P7 | 上架准备 | 计划中 |
 
-现在能跑的是算法层和一个弹窗骨架：
+现在能跑的是算法层加一个可交互的列表界面：
 
 - base32 编解码，容忍小写、空格、连字符、末尾 `=`
 - TOTP / HOTP，支持 SHA1 / SHA256 / SHA512，6 位与 8 位
-- 39 个单元断言，其中包含 RFC 6238 六组官方向量与 RFC 4226 附录 D 十组向量
+- 46 个单元断言，其中包含 RFC 6238 六组官方向量与 RFC 4226 附录 D 十组向量
+- 列表：正常 / 紧凑 / 隐藏三档视图、搜索、置顶、点击复制、环形倒计时
+- 验证码缓存：20 个账户每 250ms 只重算翻页的那几个，同窗口内其余直接命中
 - 弹窗页面 + 明暗双主题
 
-界面还是脚手架自检页，真正的列表在 P2。
+账户数据目前来自 `src/ui/fixtures/demo.ts` 的 20 个合成账户（密钥由固定种子生成，不含任何真实账户）。真正的存储与加密在 P3。
 
 ## 快速开始
 
@@ -57,12 +59,20 @@ src/
 │   ├── types.ts
 │   ├── base32.ts
 │   ├── totp.ts
+│   ├── totp-cache.ts     # 按 counter 缓存验证码，避免每 tick 全量重算
 │   └── __tests__/
 ├── platform/    # 唯一允许碰 chrome.* 的一层，便于 mock
-│   └── env.ts
+│   ├── env.ts
+│   └── clipboard.ts
 ├── background/  # MV3 service worker：只注册事件，不持有状态、不做计时
 ├── popup/       # 弹窗入口
 └── ui/          # React 组件、样式、hooks
+    ├── components/   # AccountRow / Countdown / Initials / Toast / Icons
+    ├── screens/      # ListScreen
+    ├── hooks/        # useTick（rAF 时钟）
+    ├── fixtures/     # demo.ts：合成假数据，P3 换成真实保险库
+    ├── store.ts
+    └── styles/
 ```
 
 三条纪律：
@@ -79,7 +89,7 @@ src/
 
 **权限最小化。** 当前 `manifest.json` 只申请 `storage`。`alarms`、`contextMenus`、`scripting` 这些等到真正用到的功能落地时再加——用不到却申请是商店审核最常见的打回原因。全程不申请 `host_permissions`。
 
-**性能余量。** 验证码每 250ms 只需重算即将翻页的那几个账户，不是每 tick 全量重算。20 个账户不该产生可感知的卡顿。
+**性能余量。** 验证码按 `accountId → counter` 缓存，每 250ms 只重算即将翻页的那几个账户，不是每 tick 全量重算。20 个账户实测：冷启动全量 0.8ms，同窗口内的 tick 摊销 0.008ms，跨窗口翻页那一次 0.5ms。倒计时的环靠 CSS `transition` 走针，JS 每秒只改一次目标值。
 
 ## 隐私
 
