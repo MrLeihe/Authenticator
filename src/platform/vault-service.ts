@@ -145,6 +145,10 @@ export async function resolveStatus(autoLockMinutes: number): Promise<VaultStatu
  */
 export async function autoLockIfExpired(autoLockMinutes: number): Promise<boolean> {
   if (!cached) return false;
+  // 没设密码的库不参与自动锁：DEK 本来就明文写在 wrap 里，
+  // 锁屏拦不住任何能碰到这台电脑的人，只会把用户关在一个自己没有密码的锁屏外面。
+  const { wrap } = await readStatusRaw();
+  if (wrap?.kind === 'none') return false;
   const unlockedAt = await session.get<number>(KEYS.unlockedAt);
   if (!expired(autoLockMinutes, unlockedAt)) return false;
   await lock('timeout');
@@ -185,7 +189,9 @@ export async function initializeVault(password?: string): Promise<InitResult> {
   }
 
   await local.set(KEYS.dekWrap, { v: 1, kind: 'none', dek: bytesToBase64(dek) } satisfies DekWrap);
-  cached = { dek };
+  // 必须走 rememberDek：只设 `cached` 会让 `unlockedAt` 缺失，
+  // 于是 5 秒一次的自动锁巡检立刻判定"早就该锁了"，把刚建好的库锁在门外。
+  await rememberDek(dek);
   return { vault, recoveryCode: null };
 }
 
@@ -259,6 +265,29 @@ export async function unlockWithRecovery(code: string): Promise<Vault> {
 export async function enablePassword(password: string): Promise<{ recoveryCode: string }> {
   const dek = requireDek();
   const result = await applyPassword(dek, password);
+  await forgetDek();
+  return result;
+}
+
+/**
+ * 已解锁时换密码，同时换一张新恢复码（旧的在屏幕上出现过，用完即废）。
+ *
+ * 不走「关密码 + 开密码」两步：那中间会有一瞬间把 DEK 以 `kind:'none'`
+ * 写进存储，等于短暂地把保护关掉了。这里只用当前密码验一次身份
+ * （只解不落盘），然后直接重新包一层。
+ */
+export async function changePassword(
+  current: string,
+  next: string,
+): Promise<{ recoveryCode: string }> {
+  const { wrap } = await readStatusRaw();
+  if (!wrap || wrap.kind !== 'password') {
+    throw new CryptoError('malformed', '当前没有开启密码保护');
+  }
+  const kek = await deriveKek(current, base64ToBytes(wrap.salt), wrap.iter);
+  // 密码不对在这一步就会抛 wrong-key，不会走到写盘
+  const dek = await unwrapDek({ v: 1, iv: wrap.iv, ct: wrap.ct }, kek);
+  const result = await applyPassword(dek, next);
   await forgetDek();
   return result;
 }

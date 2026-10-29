@@ -16,6 +16,7 @@ import {
   saveVault,
   unlockWithPassword,
   unlockWithRecovery,
+  changePassword,
   enablePassword,
   disablePassword,
   resetPasswordWithRecovery,
@@ -142,6 +143,20 @@ describe('autoLockIfExpired · 定时巡检', () => {
     expect(await autoLockIfExpired(0)).toBe(false);
     expect(isUnlocked()).toBe(true);
   });
+
+  it('刚建好的无密码库带着解锁时间戳，不会被立刻判超时', async () => {
+    await initializeVault();
+    expect(typeof (await session.get(KEYS.unlockedAt))).toBe('number');
+  });
+
+  it('没设密码的库根本不参与自动锁', async () => {
+    await initializeVault();
+    // 时间戳缺失正是当初的 bug：建完库 5 秒后巡检判超时，
+    // 界面落到一个"请输入密码"的锁屏，而用户从来没有设过密码
+    await session.remove(KEYS.unlockedAt);
+    expect(await autoLockIfExpired(5)).toBe(false);
+    expect(isUnlocked()).toBe(true);
+  });
 });
 
 describe('密码解锁', () => {
@@ -246,6 +261,59 @@ describe('开关密码保护', () => {
     // 新码可用，新密码也照常
     await expect(unlockWithRecovery(newCode)).resolves.toBeTruthy();
     await unlockWithPassword(OTHER_PASSWORD);
+  });
+});
+
+describe('changePassword · 拿旧密码直接换新的', () => {
+  it('换完之后旧密码进不去、新密码能进，账户还在', async () => {
+    await initializeVault(PASSWORD);
+    await unlockWithPassword(PASSWORD);
+    await saveVault(
+      addAccount(emptyVault(), {
+        issuer: '示例',
+        account: 'u@example.com',
+        secret: 'JBSWY3DPEHPK3PXP',
+      }),
+    );
+
+    const { recoveryCode } = await changePassword(PASSWORD, OTHER_PASSWORD);
+    expect(recoveryCode).toMatch(/^([A-Z2-7]{4}-){7}[A-Z2-7]{4}$/);
+    // 换完必须重新解锁：让用户当场用新密码走一遍，别等下次开机才发现记错
+    expect(isUnlocked()).toBe(false);
+
+    await expect(unlockWithPassword(PASSWORD)).rejects.toBeInstanceOf(CryptoError);
+    await unlockWithPassword(OTHER_PASSWORD);
+    expect(isUnlocked()).toBe(true);
+
+    const status = await resolveStatus(0);
+    expect(status.kind).toBe('unlocked');
+    if (status.kind === 'unlocked') {
+      expect(status.vault.accounts[0]?.issuer).toBe('示例');
+    }
+  });
+
+  it('顺带换掉恢复码：旧的作废，新的能用', async () => {
+    const { recoveryCode: oldCode } = await initializeVault(PASSWORD);
+    const { recoveryCode: newCode } = await changePassword(PASSWORD, OTHER_PASSWORD);
+    expect(newCode).not.toBe(oldCode);
+
+    await expect(unlockWithRecovery(oldCode!)).rejects.toBeInstanceOf(CryptoError);
+    await expect(unlockWithRecovery(newCode)).resolves.toBeTruthy();
+  });
+
+  it('旧密码输错时什么都不改，原密码照常能用', async () => {
+    await initializeVault(PASSWORD);
+    await unlockWithPassword(PASSWORD);
+
+    await expect(changePassword('wrong password here', OTHER_PASSWORD)).rejects.toBeInstanceOf(
+      CryptoError,
+    );
+    await expect(unlockWithPassword(PASSWORD)).resolves.toBeTruthy();
+  });
+
+  it('没有密码保护时没有可换的东西', async () => {
+    await initializeVault();
+    await expect(changePassword(PASSWORD, OTHER_PASSWORD)).rejects.toThrow(/没有开启密码保护/);
   });
 });
 

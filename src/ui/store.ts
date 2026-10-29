@@ -1,7 +1,17 @@
 import { create } from 'zustand';
+import { parseOtpauth } from '@/core/otpauth';
+import type { OtpAuthParams } from '@/core/otpauth';
 import type { Account, Settings, Vault } from '@/core/types';
 import { DEFAULT_SETTINGS } from '@/core/types';
 import {
+  addAccount as addAccountToVault,
+  removeAccount as removeAccountFromVault,
+  reorderAccount as reorderInVault,
+  setPinned as setPinnedInVault,
+  updateAccount as updateAccountInVault,
+} from '@/core/vault';
+import {
+  changePassword as changePasswordInVault,
   disablePassword,
   enablePassword,
   initializeVault,
@@ -19,6 +29,21 @@ export type ViewMode = 'normal' | 'compact' | 'masked';
 
 /** 顶层路由只看这一个状态 */
 export type Phase = 'loading' | 'empty' | 'locked' | 'unlocked';
+
+/**
+ * 覆盖在列表之上的那些界面。
+ *
+ * 它们都是**整屏替换**而不是浮层：弹窗高度跟着内容走，`fixed` 浮层一旦比
+ * 内容高就会被裁掉且无法滚动（P3 恢复码页踩过这个坑）。
+ */
+export type Sheet =
+  | { kind: 'add' }
+  | { kind: 'edit'; id: string }
+  | { kind: 'delete'; id: string }
+  | { kind: 'settings' };
+
+/** 表单最终要落成的一次写入；新增和编辑只差一个 id */
+export type AccountDraft = OtpAuthParams;
 
 export interface Toast {
   id: number;
@@ -45,6 +70,8 @@ interface AppState {
   toast: Toast | null;
   /** 打码模式下临时揭示的那一行 */
   revealedId: string | null;
+  /** 当前打开的整屏子界面；null 表示在列表上 */
+  sheet: Sheet | null;
 
   hydrate: () => Promise<void>;
   /** 首次创建；给了密码返回恢复码（需立刻展示一次） */
@@ -63,6 +90,19 @@ interface AppState {
   /** 所有数据改动都从这里走：先落盘成功，再更新界面 */
   mutate: (fn: (vault: Vault) => Vault) => Promise<void>;
   setSettings: (patch: Partial<Settings>) => Promise<void>;
+
+  openSheet: (sheet: Sheet) => void;
+  closeSheet: () => void;
+  addAccount: (draft: AccountDraft) => Promise<void>;
+  /** 从 `otpauth://` 地址添加；解析失败会抛 OtpAuthError */
+  addAccountFromUri: (uri: string, known?: OtpAuthParams) => Promise<void>;
+  saveAccount: (id: string, draft: AccountDraft) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
+  togglePin: (id: string) => Promise<void>;
+  /** 拖拽排序：插到 `beforeId` 之前，null 表示末尾 */
+  reorderAccount: (id: string, beforeId: string | null) => Promise<void>;
+  /** 已解锁时换密码，返回新恢复码（需当场展示） */
+  changePassword: (current: string, next: string) => Promise<string>;
 
   setQuery: (query: string) => void;
   setView: (view: ViewMode) => void;
@@ -92,6 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   query: '',
   toast: null,
   revealedId: null,
+  sheet: null,
 
   hydrate: async () => {
     const status = await resolveStatus(DEFAULT_SETTINGS.autoLockMinutes);
@@ -166,12 +207,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearPendingRecovery: () => set({ pendingRecovery: null }),
 
-  lockSilently: () => set({ phase: 'locked', vault: null, notice: null }),
+  // 上锁 = 回到起点：连打开着的子界面一起收掉。
+  // 留着的话，解锁后会落在一个"上一次正在做的事"上，可能已经过期了
+  lockSilently: () => set({ phase: 'locked', vault: null, notice: null, sheet: null }),
 
 
   lockNow: async () => {
     await lockVault('manual');
-    set({ phase: 'locked', vault: null, canRecover: get().canRecover, notice: null });
+    set({ phase: 'locked', vault: null, canRecover: get().canRecover, notice: null, sheet: null });
   },
 
   mutate: async (fn) => {
@@ -192,6 +235,67 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSettings: async (patch) => {
     await get().mutate((vault) => ({ ...vault, settings: { ...vault.settings, ...patch } }));
+  },
+
+  openSheet: (sheet) => set({ sheet }),
+  closeSheet: () => set({ sheet: null }),
+
+  addAccount: async (draft) => {
+    await get().mutate((vault) => addAccountToVault(vault, draft));
+    set({ sheet: null });
+    get().showToast('已添加账户');
+  },
+
+  addAccountFromUri: async (uri, known) => {
+    // 解析放在这里（而不是调用方）：扫码、粘贴、导入三条路都走同一个入口
+    const draft = known ?? parseOtpauth(uri);
+    await get().addAccount(draft);
+  },
+
+  saveAccount: async (id, draft) => {
+    await get().mutate((vault) =>
+      updateAccountInVault(vault, id, {
+        issuer: draft.issuer.trim(),
+        account: draft.account.trim(),
+        secret: draft.secret,
+        algorithm: draft.algorithm,
+        digits: draft.digits,
+        period: draft.period,
+      }),
+    );
+    set({ sheet: null });
+    get().showToast('已保存');
+  },
+
+  deleteAccount: async (id) => {
+    await get().mutate((vault) => removeAccountFromVault(vault, id));
+    // 删掉的正好是临时揭示的那一行时，别留一个指向空行的状态
+    set((state) => ({ sheet: null, revealedId: state.revealedId === id ? null : state.revealedId }));
+    get().showToast('已删除');
+  },
+
+  togglePin: async (id) => {
+    const current = get().vault?.accounts.find((account) => account.id === id);
+    if (!current) return;
+    await get().mutate((vault) => setPinnedInVault(vault, id, !current.pinned));
+  },
+
+  reorderAccount: async (id, beforeId) => {
+    await get().mutate((vault) => reorderInVault(vault, id, beforeId));
+  },
+
+  changePassword: async (current, next) => {
+    const { recoveryCode } = await changePasswordInVault(current, next);
+    await lockVault('manual');
+    set({
+      phase: 'locked',
+      vault: null,
+      sheet: null,
+      canRecover: true,
+      notice: '密码已更新，请用新密码解锁',
+      pendingRecovery: recoveryCode,
+    });
+    return recoveryCode;
   },
 
   setQuery: (query) => set({ query }),

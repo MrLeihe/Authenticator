@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
 import { RecoveryCodeSheet } from '@/ui/components/RecoveryCodeSheet';
 import { useAutoLock } from '@/ui/hooks/useAutoLock';
+import { AddAccountScreen } from '@/ui/screens/AddAccountScreen';
+import { DeleteAccountScreen } from '@/ui/screens/DeleteAccountScreen';
+import { EditAccountScreen } from '@/ui/screens/EditAccountScreen';
 import { ListScreen } from '@/ui/screens/ListScreen';
 import { LockScreen } from '@/ui/screens/LockScreen';
 import { OnboardScreen } from '@/ui/screens/OnboardScreen';
-import { useAppStore } from '@/ui/store';
+import { SettingsScreen } from '@/ui/screens/SettingsScreen';
+import { useAppStore, useSettings, type Sheet } from '@/ui/store';
+import { applyTheme } from '@/ui/theme';
 
 /**
  * 顶层路由：只看 `phase`。
@@ -17,7 +22,13 @@ export default function App() {
   const hydrate = useAppStore((s) => s.hydrate);
   const pendingRecovery = useAppStore((s) => s.pendingRecovery);
   const clearPendingRecovery = useAppStore((s) => s.clearPendingRecovery);
+  const sheet = useAppStore((s) => s.sheet);
+  const theme = useSettings().theme;
   const [fatal, setFatal] = useState<string | null>(null);
+
+  // 主题存在加密的 vault 里，所以未解锁时只能用系统设置。这是刻意的：
+  // 为了"锁屏也守主题"把偏好写到明文里，等于泄露一条用不到的用户特征
+  useEffect(() => applyTheme(theme), [theme]);
 
   useEffect(() => {
     void hydrate().catch((cause: unknown) => {
@@ -35,6 +46,9 @@ export default function App() {
     return <RecoveryCodeSheet code={pendingRecovery} onDone={clearPendingRecovery} />;
   }
 
+  // 子界面也是整屏替换：弹窗高度跟着内容走，浮层高了会被裁掉且滚不动
+  if (phase === 'unlocked' && sheet) return <SheetView sheet={sheet} />;
+
   return (
     <>
       {phase === 'loading' && <LoadingScreen />}
@@ -43,6 +57,19 @@ export default function App() {
       {phase === 'unlocked' && <ListScreen />}
     </>
   );
+}
+
+function SheetView({ sheet }: { sheet: Sheet }) {
+  switch (sheet.kind) {
+    case 'add':
+      return <AddAccountScreen />;
+    case 'edit':
+      return <EditAccountScreen id={sheet.id} />;
+    case 'delete':
+      return <DeleteAccountScreen id={sheet.id} />;
+    case 'settings':
+      return <SettingsScreen />;
+  }
 }
 
 function LoadingScreen() {

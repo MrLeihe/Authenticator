@@ -30,6 +30,14 @@ export function ListScreen() {
   const revealedId = useAppStore((s) => s.revealedId);
   const reveal = useAppStore((s) => s.reveal);
   const showToast = useAppStore((s) => s.showToast);
+  const openSheet = useAppStore((s) => s.openSheet);
+  const reorderAccount = useAppStore((s) => s.reorderAccount);
+
+  // 拖拽排序：只有「手动」排序且没在搜索时才允许 ——
+  // 搜索状态下列表只是全集的一个子集，拖出来的位置对不上真实顺序
+  const manual = settings.sortBy === 'manual' && query.trim() === '';
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
 
   const now = useTick(250);
   const cache = useRef(new TotpCache());
@@ -50,6 +58,27 @@ export function ListScreen() {
       alive = false;
     };
   }, [visible, now]);
+
+  const drop = (targetId: string, after: boolean) => {
+    const id = dragging;
+    setDragging(null);
+    setOver(null);
+    if (!id || id === targetId) return;
+
+    const from = visible.findIndex((account) => account.id === id);
+    if (from < 0) return;
+    const to = visible.findIndex((account) => account.id === targetId);
+    if (to < 0) return;
+
+    // 落点换算成「插到谁前面」；null 表示末尾
+    const beforeId = after ? (visible[to + 1]?.id ?? null) : targetId;
+    // 拖回原位不算改动，别白写一次盘
+    if (beforeId === id || visible[from + 1]?.id === beforeId) return;
+
+    void reorderAccount(id, beforeId).catch((cause: unknown) => {
+      showToast(cause instanceof Error ? cause.message : '排序没保存上', 'danger');
+    });
+  };
 
   const remainingOf = (account: Account): number => {
     const period = codes.get(account.id)?.period ?? account.period ?? 30;
@@ -86,7 +115,7 @@ export function ListScreen() {
               type="button"
               aria-label="设置"
               className="rounded-[8px] p-1.5 text-fg-muted transition-colors duration-150 hover:bg-surface-alt hover:text-fg"
-              onClick={() => showToast('设置在 P4 接入')}
+              onClick={() => openSheet({ kind: 'settings' })}
             >
               <SettingsIcon size={17} />
             </button>
@@ -108,7 +137,20 @@ export function ListScreen() {
         </div>
       </header>
 
-      <main className="flex-1">
+      <main
+        className="flex-1"
+        onDragOver={(event) => {
+          if (!dragging) return;
+          event.preventDefault();
+        }}
+        // 拖到空白处等于移到末尾，否则"想放到最后一条之后"就只能先拖到倒数第二条
+        onDrop={(event) => {
+          if (!dragging) return;
+          event.preventDefault();
+          const last = visible[visible.length - 1];
+          if (last) drop(last.id, true);
+        }}
+      >
         {visible.length === 0 ? (
           <EmptyState searching={query.trim().length > 0} />
         ) : (
@@ -122,6 +164,21 @@ export function ListScreen() {
               showInitials={settings.showInitials}
               revealed={revealedId === account.id}
               onReveal={reveal}
+              draggable={manual}
+              dragging={dragging === account.id}
+              dropEdge={
+                over && over.id === account.id && dragging !== account.id
+                  ? over.after
+                    ? 'bottom'
+                    : 'top'
+                  : null
+              }
+              onDragStart={setDragging}
+              onDragEnd={() => {
+                setDragging(null);
+                setOver(null);
+              }}
+              onDrop={drop}
             />
           ))
         )}
@@ -131,7 +188,7 @@ export function ListScreen() {
         <button
           type="button"
           className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent py-2.5 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-press"
-          onClick={() => showToast('添加账户在 P4 接入')}
+          onClick={() => openSheet({ kind: 'add' })}
         >
           <PlusIcon size={15} />
           添加账户

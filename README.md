@@ -12,19 +12,21 @@
 | P1 | 核心算法（base32 / HOTP / TOTP） | ✅ 完成 |
 | P2 | 主界面（列表 / 倒计时 / 复制） | ✅ 完成 |
 | P3 | 本地保险库 + 可选加密 | ✅ 完成 |
-| P4 | 增删改账户 | 计划中 |
+| P4 | 增删改账户 | ✅ 完成 |
 | P5 | 导入导出（otpauth / 迁移协议） | 计划中 |
 | P6 | 细节打磨 | 计划中 |
 | P7 | 上架准备 | 计划中 |
 
-现在能跑的是算法层、一个可交互的列表界面，以及完整的上锁流程：
+现在能跑的是算法层、一个可交互的列表界面、完整的上锁流程，以及账户的增删改：
 
 - base32 编解码，容忍小写、空格、连字符、末尾 `=`
 - TOTP / HOTP，支持 SHA1 / SHA256 / SHA512，6 位与 8 位
-- 118 个单元断言，其中包含 RFC 6238 六组官方向量与 RFC 4226 附录 D 十组向量
+- 163 个单元断言，其中包含 RFC 6238 六组官方向量与 RFC 4226 附录 D 十组向量
 - 列表：正常 / 紧凑 / 隐藏三档视图、搜索、置顶、点击复制、环形倒计时
 - 验证码缓存：20 个账户每 250ms 只重算翻页的那几个，同窗口内其余直接命中
 - 保险库：首次引导设置密码（或跳过）、密码解锁、恢复码重设、空闲自动锁、每日 7 份备份
+- 账户：手动添加、扫码（图片上传 / 拖放 / 粘贴）、编辑（保存前先试算一次）、删除二次确认
+- 排序：稀疏 order 的拖拽排序，置顶是独立的最高优先级
 - 弹窗页面 + 明暗双主题
 
 账户数据已经从假数据换成真正落盘的加密保险库。dev 预览下加 `?demo` 仍会塞 20 个合成账户（密钥由固定种子生成，不含任何真实账户），方便调样式；正式构建不会执行这段逻辑。
@@ -59,6 +61,7 @@ src/
 ├── core/        # 纯 TS：零 DOM、零 chrome.*、100% 可单测
 │   ├── types.ts
 │   ├── base32.ts
+│   ├── otpauth.ts        # otpauth:// URI 的解析与生成
 │   ├── totp.ts
 │   ├── totp-cache.ts     # 按 counter 缓存验证码，避免每 tick 全量重算
 │   ├── crypto.ts         # PBKDF2 + AES-GCM 原语
@@ -68,12 +71,13 @@ src/
 │   ├── env.ts
 │   ├── storage.ts        # local / session 两个区 + 无 chrome 时的内存降级
 │   ├── clipboard.ts
+│   ├── qr.ts             # jsQR 解码（白底放大后再试一次，截图也能扫）
 │   └── vault-service.ts  # 冷启动状态机、解锁、开关密码、自动锁、备份
 ├── background/  # MV3 service worker：只注册事件，不持有状态、不做计时
 ├── popup/       # 弹窗入口
 └── ui/          # React 组件、样式、hooks
-    ├── components/   # AccountRow / Countdown / Button / PasswordInput / RecoveryCodeSheet …
-    ├── screens/      # ListScreen / OnboardScreen / LockScreen
+    ├── components/   # AccountRow / AccountForm / Countdown / TextInput / ScreenHeader …
+    ├── screens/      # List / Add / Edit / Delete / Settings / Onboard / Lock
     ├── hooks/        # useTick（rAF 时钟）、useAutoLock
     ├── fixtures/     # demo.ts：`?demo` 时用的合成假数据
     ├── store.ts
@@ -97,6 +101,10 @@ src/
 **权限最小化。** 当前 `manifest.json` 只申请 `storage`。`contextMenus`、`scripting` 这些等到真正用到的功能落地时再加——用不到却申请是商店审核最常见的打回原因。全程不申请 `host_permissions`。每日备份也没有申请 `alarms`：备份只在数据真的变了时才做，交给写入路径判断，不需要一个会唤醒 service worker 的定时器。
 
 **性能余量。** 验证码按 `accountId → counter` 缓存，每 250ms 只重算即将翻页的那几个账户，不是每 tick 全量重算。20 个账户实测：冷启动全量 0.8ms，同窗口内的 tick 摊销 0.008ms，跨窗口翻页那一次 0.5ms。倒计时的环靠 CSS `transition` 走针，JS 每秒只改一次目标值。
+
+**录入。** 扫码走的是 `<input type="file">` 加拖放、粘贴，图片在本地用 jsQR 解出来——不申请 `camera`，也就不必为一个"偶尔用一次"的功能去向用户解释摄像头权限。解不出时会先把图铺到白底上放大重试一次，因为很多二维码截图是透明的，直接把原始像素喂进去会失败。二维码解析交给 `core/otpauth.ts`，它对现实世界的脏数据比较宽容：协议名大小写不限、`issuer` 可以只出现在 label 里、`digits` / `period` 缺了按 6 / 30 处理，但密钥本身严格按 RFC 4648 规范解码，不做"猜"。
+
+**排序。** `order` 用间隔 1024 的稀疏整数，插入时取前后中点，正常使用几乎不会触发重排；真的挤到没法插了，才在同一个分组内重新编号。`pinned` 是独立于 `order` 的第一排序键——否则「置顶」会被下一次拖拽改掉的相对位置带走。
 
 ## 隐私
 
@@ -124,3 +132,5 @@ src/
 ## License
 
 [MIT](LICENSE) © 2026 MrLeihe
+
+产物里原样打入了 [jsQR](https://github.com/cozmo/jsQR)（Apache-2.0）用于解码二维码图片，未作修改。第三方许可全文见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。

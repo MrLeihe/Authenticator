@@ -4,7 +4,8 @@ import {
   VaultError,
   addAccount,
   emptyVault,
-  moveAccount,
+  reorderAccount,
+  setPinned,
   nextOrder,
   normalizeVault,
   removeAccount,
@@ -175,21 +176,35 @@ describe('拖拽排序（稀疏 order）', () => {
     return vault;
   };
 
-  it('挪到下一条与上一条之间只改一行', () => {
+  /** 按界面看到的顺序（置顶优先，其次 order）取 id 列表 */
+  const visualIds = (vault: ReturnType<typeof build>) =>
+    [...vault.accounts]
+      .sort((a, b) => (a.pinned === b.pinned ? a.order - b.order : a.pinned ? -1 : 1))
+      .map((a) => a.id);
+
+  it('挪到两条之间只改一行', () => {
     const vault = build(3);
     const [first, second, third] = vault.accounts;
-    const moved = moveAccount(vault, third!.id, 1);
+    const moved = reorderAccount(vault, third!.id, second!.id);
     const byId = new Map(moved.accounts.map((a) => [a.id, a]));
     // 只有被移动的那条 order 变了，其余原封不动
     expect(byId.get(first!.id)?.order).toBe(first!.order);
     expect(byId.get(second!.id)?.order).toBe(second!.order);
     expect(byId.get(third!.id)?.order).toBeGreaterThan(first!.order);
     expect(byId.get(third!.id)?.order).toBeLessThan(second!.order);
+    expect(visualIds(moved)).toEqual([first!.id, third!.id, second!.id]);
   });
 
-  it('相邻差挤不出空隙时整表重排（间隔 1024）', () => {
+  it('beforeId 为 null 表示放到末尾', () => {
     const vault = build(3);
-    const [a, b] = vault.accounts;
+    const [first, second, third] = vault.accounts;
+    const moved = reorderAccount(vault, first!.id, null);
+    expect(visualIds(moved)).toEqual([second!.id, third!.id, first!.id]);
+  });
+
+  it('插到挤在一起的两条中间时才重排，且只重排这一组（间隔 1024）', () => {
+    const vault = build(3);
+    const [a, b, c] = vault.accounts;
     // 人为把两条挤到一起，模拟"已插入很多次"
     const squeezed = {
       ...vault,
@@ -199,12 +214,108 @@ describe('拖拽排序（稀疏 order）', () => {
         return account;
       }),
     };
-    const moved = moveAccount(squeezed, b!.id, 0);
+    // c 挤到 a 与 b 之间：1024 与 1025 之间没有整数空隙，只能重排
+    const moved = reorderAccount(squeezed, c!.id, b!.id);
     const orders = [...moved.accounts].sort((x, y) => x.order - y.order).map((x) => x.order);
     expect(orders).toEqual([ORDER_STEP, ORDER_STEP * 2, ORDER_STEP * 3]);
+    expect(visualIds(moved)).toEqual([a!.id, c!.id, b!.id]);
   });
 
-  it('移动不存在的账户会报错', () => {
-    expect(() => moveAccount(build(2), 'missing', 0)).toThrow(VaultError);
+  it('挪到最前不需要重排，直接往前减一个间隔', () => {
+    const vault = build(3);
+    const [a, , c] = vault.accounts;
+    const moved = reorderAccount(vault, c!.id, a!.id);
+    expect(moved.accounts.find((x) => x.id === c!.id)?.order).toBe(0);
+  });
+
+  it('拖进置顶区时 pinned 跟着落点走，否则界面会把这一行弹回去', () => {
+    const vault = build(3);
+    const [first, second, third] = vault.accounts;
+    const pinnedVault = setPinned(vault, second!.id, true);
+    const moved = reorderAccount(pinnedVault, third!.id, second!.id);
+    const byId = new Map(moved.accounts.map((a) => [a.id, a]));
+    expect(byId.get(third!.id)?.pinned).toBe(true);
+    expect(visualIds(moved)).toEqual([third!.id, second!.id, first!.id]);
+  });
+
+  it('拖出置顶区同样取消置顶', () => {
+    const vault = build(3);
+    const [, second, third] = vault.accounts;
+    const pinnedVault = setPinned(vault, second!.id, true);
+    const moved = reorderAccount(pinnedVault, second!.id, third!.id);
+    const byId = new Map(moved.accounts.map((a) => [a.id, a]));
+    expect(byId.get(second!.id)?.pinned).toBe(false);
+  });
+
+  it('移动不存在的账户、或落点不存在，都要报错', () => {
+    const vault = build(2);
+    expect(() => reorderAccount(vault, 'missing', null)).toThrow(VaultError);
+    expect(() => reorderAccount(vault, vault.accounts[0]!.id, 'missing')).toThrow(VaultError);
+  });
+
+  it('拖到自己前面是空操作', () => {
+    const vault = build(2);
+    const id = vault.accounts[0]!.id;
+    expect(reorderAccount(vault, id, id)).toBe(vault);
+  });
+});
+
+describe('置顶', () => {
+  const build = (count: number) => {
+    let vault = emptyVault();
+    for (let i = 0; i < count; i++) {
+      vault = addAccount(vault, { issuer: `S${i}`, account: `a${i}`, secret: SECRET });
+    }
+    return vault;
+  };
+
+  const visualOrder = (vault: ReturnType<typeof build>) =>
+    [...vault.accounts]
+      .sort((a, b) => (a.pinned === b.pinned ? a.order - b.order : a.pinned ? -1 : 1))
+      .map((a) => a.issuer);
+
+  it('置顶后排到最前，其他项的顺序一动没动', () => {
+    const vault = build(3);
+    const last = vault.accounts[2]!;
+    const pinned = setPinned(vault, last.id, true);
+    expect(visualOrder(pinned)).toEqual(['S2', 'S0', 'S1']);
+    // 组里本来没有置顶项时 order 不必变：分组本身已经把顺序说清楚了
+    expect(pinned.accounts.find((a) => a.id === last.id)?.order).toBe(last.order);
+  });
+
+  it('第二个置顶项插到第一个前面，不用整体重排', () => {
+    let vault = build(3);
+    const [first, second] = vault.accounts;
+    vault = setPinned(vault, second!.id, true);
+    const pinned = setPinned(vault, first!.id, true);
+    const order = (id: string) => pinned.accounts.find((a) => a.id === id)?.order ?? NaN;
+    expect(order(first!.id)).toBeLessThan(order(second!.id));
+  });
+
+  it('多个置顶项按置顶先后，后来的在上', () => {
+    let vault = build(3);
+    const [first, second] = vault.accounts;
+    vault = setPinned(vault, second!.id, true);
+    vault = setPinned(vault, first!.id, true);
+    expect(visualOrder(vault)).toEqual(['S0', 'S1', 'S2']);
+  });
+
+  it('取消置顶落到非置顶区最前', () => {
+    let vault = build(3);
+    const [first, second, third] = vault.accounts;
+    vault = setPinned(vault, third!.id, true);
+    vault = setPinned(vault, third!.id, false);
+    expect(visualOrder(vault)).toEqual(['S2', 'S0', 'S1']);
+    expect(vault.accounts.find((a) => a.id === second!.id)?.pinned).toBe(false);
+    expect(vault.accounts.find((a) => a.id === first!.id)?.pinned).toBe(false);
+  });
+
+  it('状态没变时原样返回，不产生新对象', () => {
+    const vault = build(1);
+    expect(setPinned(vault, vault.accounts[0]!.id, false)).toBe(vault);
+  });
+
+  it('找不到账户要报错', () => {
+    expect(() => setPinned(build(1), 'missing', true)).toThrow(VaultError);
   });
 });

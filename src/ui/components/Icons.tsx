@@ -153,15 +153,26 @@ export function BackIcon(props: IconProps) {
   );
 }
 
+/** 拖拽手柄。点阵必须是实心的：stroke 极小圆看起来像六个空圈 */
 export function GripIcon(props: IconProps) {
   return (
-    <Svg {...props}>
-      <circle cx="9" cy="6" r="1" />
-      <circle cx="15" cy="6" r="1" />
-      <circle cx="9" cy="12" r="1" />
-      <circle cx="15" cy="12" r="1" />
-      <circle cx="9" cy="18" r="1" />
-      <circle cx="15" cy="18" r="1" />
+    <Svg {...props} fill="currentColor" stroke="none">
+      <circle cx="9" cy="6" r="1.4" />
+      <circle cx="15" cy="6" r="1.4" />
+      <circle cx="9" cy="12" r="1.4" />
+      <circle cx="15" cy="12" r="1.4" />
+      <circle cx="9" cy="18" r="1.4" />
+      <circle cx="15" cy="18" r="1.4" />
+    </Svg>
+  );
+}
+
+/** 图钉。`filled` 表示这一行当前是置顶状态 */
+export function PinIcon({ filled, ...props }: IconProps & { filled?: boolean }) {
+  return (
+    <Svg {...props} fill={filled ? 'currentColor' : 'none'}>
+      <path d="M14.5 3H9.5l.8 6-3.3 3.3V14h10v-1.7L13.7 9z" />
+      <path d="M12 14v7" />
     </Svg>
   );
 }

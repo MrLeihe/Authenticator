@@ -247,26 +247,80 @@ export function nextOrder(accounts: readonly Account[]): number {
   return accounts.reduce((max, account) => Math.max(max, account.order), 0) + ORDER_STEP;
 }
 
-/** 把账户放到 target 之前（或末尾）。相邻差不足 2 时整表重排。 */
-export function moveAccount(vault: Vault, id: string, targetIndex: number): Vault {
-  const sorted = [...vault.accounts].sort((a, b) => a.order - b.order);
-  const from = sorted.findIndex((account) => account.id === id);
-  if (from < 0) throw new VaultError('malformed', '找不到要移动的账户');
-  const [moved] = sorted.splice(from, 1);
-  if (!moved) throw new VaultError('malformed', '找不到要移动的账户');
-  const index = Math.max(0, Math.min(targetIndex, sorted.length));
-  sorted.splice(index, 0, moved);
+/**
+ * 置顶 / 取消置顶。
+ *
+ * 「置顶」的含义是"到最上面"，所以两边都放到各自分组的最前面：
+ * 置顶的进置顶区顶部，取消置顶的落到非置顶区顶部（也就是所有置顶项之后）。
+ * order 只是个排序键，允许为负数，这样这条路径永远不用重排。
+ */
+export function setPinned(vault: Vault, id: string, pinned: boolean): Vault {
+  const target = vault.accounts.find((account) => account.id === id);
+  if (!target) throw new VaultError('malformed', '找不到这个账户');
+  if (target.pinned === pinned) return vault;
 
-  const before = sorted[index - 1]?.order;
-  const after = sorted[index + 1]?.order;
-  if (before !== undefined && after !== undefined) {
-    const gap = after - before;
-    if (gap >= 2) {
-      moved.order = before + Math.floor(gap / 2);
-      return { ...vault, accounts: sorted };
-    }
+  const group = vault.accounts.filter((account) => account.id !== id && account.pinned === pinned);
+  const min = group.reduce((acc, account) => Math.min(acc, account.order), Infinity);
+  const order = group.length === 0 ? target.order : min - ORDER_STEP;
+
+  return updateAccount(vault, id, { pinned, order });
+}
+
+/** 排序键：置顶优先，其次 order。界面与这里必须用同一套规则。 */
+function compareOrder(a: Account, b: Account): number {
+  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+  return a.order - b.order;
+}
+
+/**
+ * 拖拽排序：把 `id` 插到 `beforeId` 之前，`beforeId` 为 null 表示末尾。
+ *
+ * 拖到另一个分组（置顶 / 非置顶）时，`pinned` 跟着落点走 ——
+ * 否则界面会把这一行弹回原处，用户只会觉得"拖不动"。
+ * 组内相邻差不足 2 时重排**这一组**（不是整表）：组外的 order 与它无关。
+ */
+export function reorderAccount(vault: Vault, id: string, beforeId: string | null): Vault {
+  const moved = vault.accounts.find((account) => account.id === id);
+  if (!moved) throw new VaultError('malformed', '找不到要移动的账户');
+  if (beforeId === id) return vault;
+
+  const rest = vault.accounts.filter((account) => account.id !== id).sort(compareOrder);
+  const index = beforeId === null ? rest.length : rest.findIndex((a) => a.id === beforeId);
+  if (beforeId !== null && index < 0) throw new VaultError('malformed', '找不到落点账户');
+
+  // 落点前后是谁，决定了这一行该进哪个分组
+  const prev = rest[index - 1];
+  const next = rest[index];
+  const pinned = prev ? prev.pinned : next ? next.pinned : moved.pinned;
+
+  const before = rest.slice(0, index).filter((a) => a.pinned === pinned).pop();
+  const after = rest.slice(index).find((a) => a.pinned === pinned);
+
+  let order: number;
+  let crowded = false;
+  if (!before) {
+    order = after ? after.order - ORDER_STEP : moved.order;
+  } else if (!after) {
+    order = before.order + ORDER_STEP;
+  } else if (after.order - before.order >= 2) {
+    order = before.order + Math.floor((after.order - before.order) / 2);
+  } else {
+    order = 0;
+    crowded = true;
   }
-  // 挤不出空隙就整表重排：1024 间隔下要 1024 次相邻插入才会遇到一次
-  const renumbered = sorted.map((account, i) => ({ ...account, order: (i + 1) * ORDER_STEP }));
-  return { ...vault, accounts: renumbered };
+
+  // 直接插到目标位置上 —— `rest` 本来就是视觉顺序，插进去就还是视觉顺序。
+  // 不能靠"给一个临时 order 再排序"：挤不出空隙时那个值根本没有合适的位置可放。
+  const merged = [...rest];
+  merged.splice(index, 0, { ...moved, pinned, order });
+  if (!crowded) return { ...vault, accounts: merged };
+
+  // 挤不出空隙：只把**这一组**按 1024 重排，组外的 order 与它无关
+  let counter = 0;
+  return {
+    ...vault,
+    accounts: merged.map((account) =>
+      account.pinned === pinned ? { ...account, order: (counter += 1) * ORDER_STEP } : account,
+    ),
+  };
 }

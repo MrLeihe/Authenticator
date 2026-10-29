@@ -5,16 +5,31 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
  * 高度 42px / 圆角 10px 与列表页「添加账户」保持一致。
  */
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode };
+export type ButtonVariant = 'primary' | 'secondary' | 'text';
+
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  children: ReactNode;
+  variant?: ButtonVariant;
+};
 
 const BASE =
-  'flex w-full items-center justify-center gap-1.5 rounded-[10px] text-[13px] font-medium transition-colors duration-150 disabled:cursor-not-allowed';
+  'flex items-center justify-center gap-1.5 font-medium transition-colors duration-150 disabled:cursor-not-allowed';
 
-export function PrimaryButton({ children, className = '', ...rest }: ButtonProps) {
+const VARIANTS: Record<ButtonVariant, string> = {
+  primary:
+    'h-[42px] w-full rounded-[10px] bg-accent text-[13px] text-white hover:bg-accent-press disabled:bg-surface-alt disabled:text-fg-muted',
+  // 次要动作：描边，不抢主按钮的注意力
+  secondary:
+    'h-[42px] w-full rounded-[10px] border border-separator bg-surface text-[13px] text-fg hover:bg-surface-alt disabled:opacity-50',
+  // 文字按钮：用于「忘记密码」「取消」这类不该有按钮重量级的动作
+  text: 'rounded-[6px] px-1 py-1 text-[12px] text-accent hover:text-accent-press disabled:opacity-50',
+};
+
+export function Button({ variant = 'primary', className = '', children, ...rest }: ButtonProps) {
   return (
     <button
       type="button"
-      className={`${BASE} h-[42px] bg-accent text-white hover:bg-accent-press disabled:bg-surface-alt disabled:text-fg-muted ${className}`}
+      className={`${BASE} ${VARIANTS[variant]} ${className}`}
       {...rest}
     >
       {children}
@@ -22,28 +37,14 @@ export function PrimaryButton({ children, className = '', ...rest }: ButtonProps
   );
 }
 
-/** 次要动作：描边，不抢主按钮的注意力 */
-export function SecondaryButton({ children, className = '', ...rest }: ButtonProps) {
-  return (
-    <button
-      type="button"
-      className={`${BASE} h-[42px] border border-separator bg-surface text-fg hover:bg-surface-alt disabled:opacity-50 ${className}`}
-      {...rest}
-    >
-      {children}
-    </button>
-  );
+export function PrimaryButton(props: Omit<ButtonProps, 'variant'>) {
+  return <Button variant="primary" {...props} />;
 }
 
-/** 文字按钮：用于「忘记密码」「返回」这类不该有按钮重量级的动作 */
-export function TextButton({ children, className = '', ...rest }: ButtonProps) {
-  return (
-    <button
-      type="button"
-      className={`rounded-[6px] px-1 py-1 text-[12px] font-medium text-accent transition-colors duration-150 hover:text-accent-press disabled:opacity-50 ${className}`}
-      {...rest}
-    >
-      {children}
-    </button>
-  );
+export function SecondaryButton(props: Omit<ButtonProps, 'variant'>) {
+  return <Button variant="secondary" {...props} />;
+}
+
+export function TextButton(props: Omit<ButtonProps, 'variant'>) {
+  return <Button variant="text" {...props} />;
 }
