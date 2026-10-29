@@ -5,8 +5,10 @@ import { defineManifest } from '@crxjs/vite-plugin';
  *
  * 权限策略：**按阶段增量申请**，不要一次性写满。
  *   P0  storage                     —— 存 vault / settings
- *   P3  alarms                      —— 每日自动备份
  *   V1.1 contextMenus + scripting + activeTab + sidePanel —— 右键插入、侧边栏
+ *
+ * 每日备份没有申请 alarms：备份只在数据真的变了时才做，交给写入路径判断，
+ * 不需要一个会唤醒 SW 的定时器。
  * 申请了却用不到的权限是商店审核的高频拒因，落功能时再加。
  */
 export default defineManifest({

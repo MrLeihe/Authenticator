@@ -11,22 +11,23 @@
 | P0 | 脚手架（Vite + React + MV3） | ✅ 完成 |
 | P1 | 核心算法（base32 / HOTP / TOTP） | ✅ 完成 |
 | P2 | 主界面（列表 / 倒计时 / 复制） | ✅ 完成 |
-| P3 | 本地保险库 + 可选加密 | ⏳ 进行中 |
+| P3 | 本地保险库 + 可选加密 | ✅ 完成 |
 | P4 | 增删改账户 | 计划中 |
 | P5 | 导入导出（otpauth / 迁移协议） | 计划中 |
 | P6 | 细节打磨 | 计划中 |
 | P7 | 上架准备 | 计划中 |
 
-现在能跑的是算法层加一个可交互的列表界面：
+现在能跑的是算法层、一个可交互的列表界面，以及完整的上锁流程：
 
 - base32 编解码，容忍小写、空格、连字符、末尾 `=`
 - TOTP / HOTP，支持 SHA1 / SHA256 / SHA512，6 位与 8 位
-- 46 个单元断言，其中包含 RFC 6238 六组官方向量与 RFC 4226 附录 D 十组向量
+- 118 个单元断言，其中包含 RFC 6238 六组官方向量与 RFC 4226 附录 D 十组向量
 - 列表：正常 / 紧凑 / 隐藏三档视图、搜索、置顶、点击复制、环形倒计时
 - 验证码缓存：20 个账户每 250ms 只重算翻页的那几个，同窗口内其余直接命中
+- 保险库：首次引导设置密码（或跳过）、密码解锁、恢复码重设、空闲自动锁、每日 7 份备份
 - 弹窗页面 + 明暗双主题
 
-账户数据目前来自 `src/ui/fixtures/demo.ts` 的 20 个合成账户（密钥由固定种子生成，不含任何真实账户）。真正的存储与加密在 P3。
+账户数据已经从假数据换成真正落盘的加密保险库。dev 预览下加 `?demo` 仍会塞 20 个合成账户（密钥由固定种子生成，不含任何真实账户），方便调样式；正式构建不会执行这段逻辑。
 
 ## 快速开始
 
@@ -60,17 +61,21 @@ src/
 │   ├── base32.ts
 │   ├── totp.ts
 │   ├── totp-cache.ts     # 按 counter 缓存验证码，避免每 tick 全量重算
+│   ├── crypto.ts         # PBKDF2 + AES-GCM 原语
+│   ├── vault.ts          # 保险库结构与 schemaVersion 迁移骨架
 │   └── __tests__/
 ├── platform/    # 唯一允许碰 chrome.* 的一层，便于 mock
 │   ├── env.ts
-│   └── clipboard.ts
+│   ├── storage.ts        # local / session 两个区 + 无 chrome 时的内存降级
+│   ├── clipboard.ts
+│   └── vault-service.ts  # 冷启动状态机、解锁、开关密码、自动锁、备份
 ├── background/  # MV3 service worker：只注册事件，不持有状态、不做计时
 ├── popup/       # 弹窗入口
 └── ui/          # React 组件、样式、hooks
-    ├── components/   # AccountRow / Countdown / Initials / Toast / Icons
-    ├── screens/      # ListScreen
-    ├── hooks/        # useTick（rAF 时钟）
-    ├── fixtures/     # demo.ts：合成假数据，P3 换成真实保险库
+    ├── components/   # AccountRow / Countdown / Button / PasswordInput / RecoveryCodeSheet …
+    ├── screens/      # ListScreen / OnboardScreen / LockScreen
+    ├── hooks/        # useTick（rAF 时钟）、useAutoLock
+    ├── fixtures/     # demo.ts：`?demo` 时用的合成假数据
     ├── store.ts
     └── styles/
 ```
@@ -87,7 +92,9 @@ src/
 
 **主题。** 颜色全部以 CSS 变量声明，`tailwind.config.ts` 映射成语义名（`bg` / `surface` / `fg` / `accent` / `warn` …），组件里不出现十六进制色值。暗色不是简单反色：卡片、背景、分隔线和强调色都单独取过值。
 
-**权限最小化。** 当前 `manifest.json` 只申请 `storage`。`alarms`、`contextMenus`、`scripting` 这些等到真正用到的功能落地时再加——用不到却申请是商店审核最常见的打回原因。全程不申请 `host_permissions`。
+**加密。** 数据永远用一把随机 32 字节的 DEK 走 AES-256-GCM。密码只是用来包住这把 DEK（PBKDF2-SHA256 / 600k / 16 字节盐），恢复码同理（20 字节随机量直接做 KEK，不再多跑一次 PBKDF2）。三种状态（不设密码 / 密码 / 恢复码）共用同一段解密代码，靠 AAD 区分用途，所以三段密文互相搬不动。所有解密失败都折叠成同一个错误，界面不会泄露到底是密码错、密文被改还是参数不对。
+
+**权限最小化。** 当前 `manifest.json` 只申请 `storage`。`contextMenus`、`scripting` 这些等到真正用到的功能落地时再加——用不到却申请是商店审核最常见的打回原因。全程不申请 `host_permissions`。每日备份也没有申请 `alarms`：备份只在数据真的变了时才做，交给写入路径判断，不需要一个会唤醒 service worker 的定时器。
 
 **性能余量。** 验证码按 `accountId → counter` 缓存，每 250ms 只重算即将翻页的那几个账户，不是每 tick 全量重算。20 个账户实测：冷启动全量 0.8ms，同窗口内的 tick 摊销 0.008ms，跨窗口翻页那一次 0.5ms。倒计时的环靠 CSS `transition` 走针，JS 每秒只改一次目标值。
 
@@ -96,6 +103,7 @@ src/
 - 不发起任何网络请求，没有 CDN、没有远程代码、没有 eval
 - 不收集数据，不埋点，不识别用户
 - 密钥（`secret`）只以密文形式落盘；开启加密后，未解锁时内存里也不存在明文
+- 解锁后的密钥只放在 `chrome.storage.session`，且收紧到只有扩展自己的页面可读；关浏览器即消失
 - 复制验证码后按设置自动清空剪贴板
 - 不读取标签页内容，不判断你登录了哪些网站
 

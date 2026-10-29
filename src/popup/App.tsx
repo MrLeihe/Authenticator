@@ -1,9 +1,69 @@
+import { useEffect, useState } from 'react';
+import { RecoveryCodeSheet } from '@/ui/components/RecoveryCodeSheet';
+import { useAutoLock } from '@/ui/hooks/useAutoLock';
 import { ListScreen } from '@/ui/screens/ListScreen';
+import { LockScreen } from '@/ui/screens/LockScreen';
+import { OnboardScreen } from '@/ui/screens/OnboardScreen';
+import { useAppStore } from '@/ui/store';
 
 /**
- * 顶层路由。P2 只有列表一屏，P3 会按 vault 状态切到
- * locked（要密码）/ onboard（首次引导）/ list。
+ * 顶层路由：只看 `phase`。
+ *
+ * 恢复码是唯一会打断整个界面的东西 —— 生成它的时候状态已经切走了，
+ * 所以它必须由这一层来渲染，不能挂在某个具体界面上。
  */
 export default function App() {
-  return <ListScreen />;
+  const phase = useAppStore((s) => s.phase);
+  const hydrate = useAppStore((s) => s.hydrate);
+  const pendingRecovery = useAppStore((s) => s.pendingRecovery);
+  const clearPendingRecovery = useAppStore((s) => s.clearPendingRecovery);
+  const [fatal, setFatal] = useState<string | null>(null);
+
+  useEffect(() => {
+    void hydrate().catch((cause: unknown) => {
+      // 这里唯一该说清的是"数据比扩展新"，其余按未知错误处理
+      setFatal(cause instanceof Error ? cause.message : '读取本地数据失败');
+    });
+  }, [hydrate]);
+
+  useAutoLock(phase === 'unlocked');
+
+  if (fatal) return <FatalScreen message={fatal} />;
+
+  // 恢复码是整屏替换而不是浮层：弹窗高度跟着内容走，浮层高了就会被裁掉
+  if (pendingRecovery) {
+    return <RecoveryCodeSheet code={pendingRecovery} onDone={clearPendingRecovery} />;
+  }
+
+  return (
+    <>
+      {phase === 'loading' && <LoadingScreen />}
+      {phase === 'empty' && <OnboardScreen />}
+      {phase === 'locked' && <LockScreen />}
+      {phase === 'unlocked' && <ListScreen />}
+    </>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <div className="flex min-h-[280px] items-center justify-center bg-bg">
+      <span
+        aria-label="正在读取"
+        className="h-5 w-5 animate-spin rounded-full border-2 border-separator border-t-accent"
+      />
+    </div>
+  );
+}
+
+function FatalScreen({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-[280px] flex-col justify-center bg-bg px-5 py-7">
+      <h1 className="text-[16px] font-semibold tracking-tight">打不开本地数据</h1>
+      <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">{message}</p>
+      <p className="mt-3 text-[11px] leading-relaxed text-fg-muted">
+        数据还在本地，没有被删掉。先别清除浏览器数据，把这句话记下来再处理。
+      </p>
+    </div>
+  );
 }

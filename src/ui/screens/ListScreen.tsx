@@ -6,7 +6,14 @@ import { AccountRow } from '../components/AccountRow';
 import { PlusIcon, SearchIcon, SettingsIcon } from '../components/Icons';
 import { Toast } from '../components/Toast';
 import { useTick } from '../hooks/useTick';
-import { filterAccounts, sortAccounts, useAppStore, type ViewMode } from '../store';
+import {
+  filterAccounts,
+  sortAccounts,
+  useAccounts,
+  useAppStore,
+  useSettings,
+  type ViewMode,
+} from '../store';
 
 const VIEWS: Array<{ value: ViewMode; label: string }> = [
   { value: 'normal', label: '正常' },
@@ -15,8 +22,8 @@ const VIEWS: Array<{ value: ViewMode; label: string }> = [
 ];
 
 export function ListScreen() {
-  const accounts = useAppStore((s) => s.accounts);
-  const settings = useAppStore((s) => s.settings);
+  const accounts = useAccounts();
+  const settings = useSettings();
   const query = useAppStore((s) => s.query);
   const setQuery = useAppStore((s) => s.setQuery);
   const setView = useAppStore((s) => s.setView);

@@ -3,7 +3,7 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { formatCode } from '@/core/totp';
 import type { Account } from '@/core/types';
 import { copyText, scheduleClipboardClear } from '@/platform/clipboard';
-import { useAppStore, type ViewMode } from '../store';
+import { useAppStore, useSettings, type ViewMode } from '../store';
 import { Countdown } from './Countdown';
 import { CopyIcon, PencilIcon, GripIcon, TrashIcon } from './Icons';
 import { Initials } from './Initials';
@@ -38,7 +38,7 @@ export const AccountRow = memo(function AccountRow({
   onReveal,
 }: AccountRowProps) {
   const showToast = useAppStore((s) => s.showToast);
-  const clearSeconds = useAppStore((s) => s.settings.clipboardClearSeconds);
+  const clearSeconds = useSettings().clipboardClearSeconds;
   const compact = view === 'compact';
   const masked = view === 'masked' && !revealed;
   const invalid = code === '';
