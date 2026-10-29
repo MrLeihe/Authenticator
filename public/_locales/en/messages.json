@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Authenticator",
+    "description": "Extension name shown in Chrome. Replaced with the final brand before release."
+  },
+  "extDesc": {
+    "message": "Local-only two-factor (TOTP) code generator. No network, no upload, free with no in-app purchases.",
+    "description": "Extension description used by the store listing and chrome://extensions."
+  }
+}

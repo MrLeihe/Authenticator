@@ -1,0 +1,35 @@
+{
+  // 构建期配置文件的独立类型检查。
+  // 刻意不把 src 放进来：扩展代码不该看到 Node 的全局对象，
+  // 反过来配置文件也不该被 DOM lib 污染。两个项目分开跑 tsc。
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": [
+    "manifest.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "tailwind.config.ts"
+  ]
+}

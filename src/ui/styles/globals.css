@@ -1,0 +1,146 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   原始色板 —— 实测自 iOS systemGray 全套
+   只在这里出现数值，组件里一律用 Tailwind 语义类
+   ============================================================ */
+:root {
+  /* 亮色：systemGray */
+  --gray-50: 242 242 247;
+  --gray-100: 235 235 240;
+  --gray-200: 229 229 234;
+  --gray-300: 209 209 214;
+  --gray-400: 142 142 147;
+  --gray-500: 108 108 112;
+  --gray-600: 84 84 88;
+  --gray-700: 72 72 74;
+  --gray-800: 44 44 46;
+  --gray-900: 29 29 31;
+
+  /* 暗色：表面层级 */
+  --dark-300: 174 174 178;
+  --dark-400: 142 142 147;
+  --dark-500: 72 72 74;
+  --dark-600: 56 56 58;
+  --dark-700: 44 44 46;
+  --dark-800: 28 28 30;
+  --dark-900: 0 0 0;
+
+  /* 系统强调色 */
+  --accent-300: 64 156 255;
+  --accent-400: 10 132 255;
+  --accent-500: 0 122 255;
+  --accent-600: 0 113 227;
+  --accent-700: 0 102 214;
+
+  /* 功能色 */
+  --warn-rgb: 234 88 12;
+  --success-rgb: 52 199 89;
+  --danger-rgb: 255 59 48;
+
+  /* 圆角 */
+  --r-card: 16px;
+  --r-input: 8px;
+
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Helvetica Neue", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto,
+    Arial, sans-serif;
+  --digit-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---------- 语义映射（亮色） ---------- */
+  --bg: var(--gray-50);
+  --surface: 255 255 255;
+  --surface-alt: var(--gray-100);
+  --separator: var(--gray-200);
+  --fg: var(--gray-900);
+  --fg-muted: var(--gray-500);
+  --accent: var(--accent-500);
+  --accent-press: var(--accent-600);
+  --warn: var(--warn-rgb);
+  --success: var(--success-rgb);
+  --danger: var(--danger-rgb);
+
+  color-scheme: light;
+}
+
+.dark {
+  /* ---------- 语义映射（暗色） ---------- */
+  --bg: var(--dark-900);
+  --surface: var(--dark-800);
+  --surface-alt: var(--dark-700);
+  --separator: var(--dark-600);
+  --fg: 255 255 255;
+  --fg-muted: var(--dark-400);
+  --accent: var(--accent-400);
+  --accent-press: var(--accent-500);
+  --success: 48 209 88;
+
+  color-scheme: dark;
+}
+
+/* ============================================================
+   基础样式
+   ============================================================ */
+@layer base {
+  html {
+    /* 弹窗宽度固定 400px，高度由内容决定 */
+    width: 400px;
+  }
+
+  body {
+    @apply m-0 bg-bg text-fg font-sans antialiased;
+    width: 400px;
+    min-height: 200px;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 键盘可达：只在键盘导航时显示焦点环 */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/60 ring-offset-1;
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+
+  /* 数字不跳动 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* 验证码：24px 等宽、3+3 分组、永远 LTR */
+  .code {
+    @apply font-digit text-digit tabular-nums text-accent;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  /* 账户行底部分隔线：左右内缩 16px，最后一行不画 */
+  .row-divider {
+    @apply relative;
+  }
+  .row-divider::after {
+    content: '';
+    @apply absolute bottom-0 left-4 right-4 h-px bg-separator;
+  }
+  .row-divider:last-child::after {
+    @apply hidden;
+  }
+}
+
+/* 尊重系统的减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

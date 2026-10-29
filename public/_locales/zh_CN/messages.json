@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "验证码",
+    "description": "扩展在 Chrome 中显示的名称。上架前会替换为正式品牌名。"
+  },
+  "extDesc": {
+    "message": "本地生成两步验证（TOTP）验证码。不联网、不上传、免费无内购。",
+    "description": "扩展描述，商店列表与 chrome://extensions 共用。"
+  }
+}

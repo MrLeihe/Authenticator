@@ -1,0 +1,27 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+
+# 构建产物里的 sourcemap 是给商店审核看的，本地留一份即可，不入库
+*.map
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 本地环境与密钥。扩展本身不读 .env，这条是防手滑
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# 打包产物
+*.crx
+*.zip
+*.crdownload
