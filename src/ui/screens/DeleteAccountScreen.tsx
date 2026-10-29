@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Button } from '../components/Button';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { describeError, useMessage } from '../errors';
+import type { Message } from '../errors';
+import { useT } from '../i18n';
 import { useAccounts, useAppStore } from '../store';
 
 /**
@@ -11,16 +14,19 @@ import { useAccounts, useAppStore } from '../store';
  * 但按钮上必须写清**要删的是谁**，让人有机会发现点错了行。
  */
 export function DeleteAccountScreen({ id }: { id: string }) {
+  const t = useT();
+  const message = useMessage();
   const closeSheet = useAppStore((s) => s.closeSheet);
   const deleteAccount = useAppStore((s) => s.deleteAccount);
   const account = useAccounts().find((item) => item.id === id);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
 
-  const title = account
+  // 要删的是谁，必须一眼看得见 —— 点错行的时候，这是最后一道拦截
+  const label = account
     ? account.account
-      ? `${account.issuer}：${account.account}`
-      : account.issuer || '这个账户'
+      ? t('name.with-issuer', { issuer: account.issuer, account: account.account })
+      : account.issuer || t('delete.this-account')
     : '';
 
   const confirm = async () => {
@@ -29,23 +35,29 @@ export function DeleteAccountScreen({ id }: { id: string }) {
     try {
       await deleteAccount(id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '删除失败，请重试');
+      const described = describeError(cause);
+      setError(described.key === 'error.unknown' ? { key: 'delete.failed' } : described);
       setBusy(false);
     }
   };
 
   return (
     <div className="flex min-h-[280px] flex-col bg-bg">
-      <ScreenHeader title="删除账户" onBack={closeSheet} />
+      <ScreenHeader title={t('delete.title')} onBack={closeSheet} />
       <div className="flex flex-1 flex-col px-4 py-4">
-        <p className="text-[13px] leading-relaxed">
-          确定要删除 <span className="font-medium text-fg">{title}</span> 吗？
-        </p>
-        <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">
-          删除后这个账户就不会再生成验证码了。如果只是暂时不想看到，可以把它置顶。
-        </p>
+        <p className="text-[13px] leading-relaxed">{t('delete.confirm')}</p>
+        {label && (
+          <p className="mt-1.5 rounded-[8px] bg-surface-alt/60 px-3 py-2 text-[13px] font-medium text-fg break-words">
+            {label}
+          </p>
+        )}
+        <p className="mt-2 text-[12px] leading-relaxed text-fg-muted">{t('delete.body')}</p>
 
-        {error && <p className="mt-3 text-[11px] text-danger">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-3 text-[11px] text-danger">
+            {message(error)}
+          </p>
+        )}
 
         <div className="mt-auto space-y-2 pt-5">
           <Button
@@ -54,10 +66,10 @@ export function DeleteAccountScreen({ id }: { id: string }) {
             disabled={busy}
             onClick={() => void confirm()}
           >
-            {busy ? '删除中…' : '删除'}
+            {t(busy ? 'delete.deleting' : 'delete.action')}
           </Button>
           <Button variant="text" className="w-full" onClick={closeSheet} disabled={busy}>
-            取消
+            {t('common.cancel')}
           </Button>
         </div>
       </div>

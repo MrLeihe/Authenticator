@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { ImportError, parseImport, planImport } from '@/core/backup';
 import type { ParsedImport } from '@/core/backup';
-import { CryptoError } from '@/core/crypto';
 import type { OtpAuthParams } from '@/core/otpauth';
 import { decodeQrFile } from '@/platform/qr';
 import { Button, SecondaryButton, TextButton } from '../components/Button';
 import { PasswordInput } from '../components/PasswordInput';
 import { ScreenHeader } from '../components/ScreenHeader';
+import {
+  UiError,
+  describeDiagnostic,
+  describeNote,
+  describeSkip,
+  useErrorText,
+  useMessage,
+} from '../errors';
+import { useT } from '../i18n';
+import type { Translate } from '../i18n';
 import { useAccounts, useAppStore } from '../store';
 
 /**
@@ -17,13 +26,13 @@ import { useAccounts, useAppStore } from '../store';
  * 这些都必须让人先看见再决定。合并规则见 `core/backup.ts` 的 `planImport`：
  * 只做加法，绝不覆盖。
  */
-export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
-  const closeSheet = useAppStore((s) => s.closeSheet);
-  const openSheet = useAppStore((s) => s.openSheet);
+export function ImportScreen() {
+  const t = useT();
+  const errorText = useErrorText();
+  const back = useAppStore((s) => s.back);
   const importAccounts = useAppStore((s) => s.importAccounts);
   const accounts = useAccounts();
 
-  const back = from === 'settings' ? () => openSheet({ kind: 'settings' }) : closeSheet;
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<'pick' | 'password' | 'preview'>('pick');
@@ -63,7 +72,7 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
         setStep('password');
         return;
       }
-      setError(describe(cause));
+      setError(errorText(cause, 'import'));
     } finally {
       setBusy(false);
     }
@@ -74,13 +83,14 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
     setError(null);
     setBusy(true);
     try {
-      if (file.size === 0) throw new Error('这个文件是空的');
-      if (file.size > 5 * 1024 * 1024) throw new Error('文件太大了，备份文件一般在 1MB 以内');
+      // 这两个前提只有界面知道（core 拿到的是字符串，看不见文件有多大）
+      if (file.size === 0) throw new UiError('error.file-empty');
+      if (file.size > 5 * 1024 * 1024) throw new UiError('error.file-too-large');
       // 图片当迁移二维码处理，其余一律按文本读
       const content = file.type.startsWith('image/') ? await decodeQrFile(file) : await file.text();
       await read(content);
     } catch (cause) {
-      setError(describe(cause));
+      setError(errorText(cause, 'import'));
     } finally {
       setBusy(false);
     }
@@ -108,7 +118,7 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
     try {
       await importAccounts(plan.add.map((entry) => entry.draft));
     } catch (cause) {
-      setError(describe(cause));
+      setError(errorText(cause, 'import'));
       setBusy(false);
     }
   };
@@ -116,7 +126,7 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
   return (
     <div className="flex min-h-[280px] flex-col bg-bg pb-4">
       <ScreenHeader
-        title="导入"
+        title={t('import.title')}
         onBack={
           step === 'pick'
             ? back
@@ -144,16 +154,16 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
                 void handleFile(event.dataTransfer.files[0]);
               }}
             >
-              <p className="text-[13px] font-medium">把备份文件拖进来</p>
+              <p className="text-[13px] font-medium">{t('import.drop-title')}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">
-                支持本扩展导出的 .json、每行一条 otpauth 的 .txt，以及迁移二维码截图
+                {t('import.drop-hint')}
               </p>
               <SecondaryButton
                 className="mt-3 w-auto px-4"
                 disabled={busy}
                 onClick={() => fileInput.current?.click()}
               >
-                {busy ? '读取中…' : '选择文件'}
+                {busy ? t('import.reading') : t('import.pick-file')}
               </SecondaryButton>
               <input
                 ref={fileInput}
@@ -170,20 +180,20 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
 
             <div className="border-t border-separator pt-3">
               <label htmlFor="import-text" className="mb-1.5 block text-[12px] font-medium text-fg-muted">
-                或者直接粘贴内容
+                {t('import.paste-label')}
               </label>
               <textarea
                 id="import-text"
                 value={text}
                 rows={4}
                 spellCheck={false}
-                placeholder="otpauth://totp/… 一行一条，或整份 JSON"
+                placeholder={t('import.paste-placeholder')}
                 onChange={(event) => setText(event.target.value)}
                 className="w-full resize-none rounded-[8px] bg-surface-alt px-3 py-2 font-digit text-[12px] text-fg outline-none placeholder:text-fg-muted focus:ring-2 focus:ring-accent/40"
               />
               <div className="mt-2">
                 <SecondaryButton disabled={busy || !text.trim()} onClick={() => void read(text)}>
-                  解析内容
+                  {t('import.parse')}
                 </SecondaryButton>
               </div>
             </div>
@@ -192,11 +202,9 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
 
         {step === 'password' && (
           <div className="space-y-3">
-            <p className="text-[12px] leading-relaxed text-fg">
-              这份备份是加密的，请输入<span className="font-medium">导出时设的密码</span>。
-            </p>
+            <p className="text-[12px] leading-relaxed text-fg">{t('import.password.body')}</p>
             <PasswordInput
-              label="导出密码"
+              label={t('import.password.label')}
               value={password}
               // 一改密码就把上一次的"密码不对"收掉：否则输到一半还挂着红字，像是又错了
               onChange={(value) => {
@@ -215,10 +223,10 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
                 if (pendingText) void read(pendingText, password);
               }}
             >
-              {busy ? '解密中…' : '解密并预览'}
+              {busy ? t('import.decrypting') : t('import.decrypt')}
             </Button>
             <TextButton className="w-full" onClick={reset} disabled={busy}>
-              换一份文件
+              {t('import.other-file')}
             </TextButton>
           </div>
         )}
@@ -227,7 +235,12 @@ export function ImportScreen({ from }: { from?: 'settings' | undefined }) {
           <Preview plan={plan} onConfirm={() => void confirm()} busy={busy} onReset={reset} />
         )}
 
-        {error && <p className="mt-3 text-[11px] leading-relaxed text-danger">{error}</p>}
+        {/* 这一句往往是「为什么没导入成功」的唯一解释，读屏要能立刻听到 */}
+        {error && (
+          <p role="alert" className="mt-3 text-[11px] leading-relaxed text-danger">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -244,34 +257,42 @@ function Preview({
   onConfirm: () => void;
   onReset: () => void;
 }) {
+  const t = useT();
+  const message = useMessage();
+  /** 问题列表先全部折成句子，再决定显示几条 —— 免得"还有 N 条"那一行的算法和渲染各算一次 */
+  const issues = plan.issues.map((issue) => message(describeDiagnostic(issue)));
+  const shown = issues.slice(0, ISSUES_SHOWN);
+
   return (
     <div className="space-y-3">
       {plan.batch && (
         <p className="rounded-[8px] bg-warn/10 px-3 py-2 text-[11px] leading-relaxed text-fg">
-          这是第 {plan.batch.index + 1} / {plan.batch.size} 张迁移码。账户多的时候
-          Google Authenticator 会拆成好几张，其余的请再导入一次。
+          {t('import.batch', { index: plan.batch.index + 1, total: plan.batch.size })}
         </p>
       )}
 
       <div className="flex items-baseline gap-3 text-[12px]">
-        <span className="text-fg">
-          新增 <span className="font-semibold">{plan.add.length}</span> 条
-        </span>
+        <span className="text-fg">{t('import.count.add', { count: plan.add.length })}</span>
         {plan.skip.length > 0 && (
-          <span className="text-fg-muted">已存在 {plan.skip.length} 条</span>
+          <span className="text-fg-muted">{t('import.count.skip', { count: plan.skip.length })}</span>
         )}
         {plan.issues.length > 0 && (
-          <span className="text-danger">无法读取 {plan.issues.length} 条</span>
+          <span className="text-danger">{t('import.count.issues', { count: plan.issues.length })}</span>
         )}
       </div>
 
       {plan.add.length > 0 && (
         <ul className="divide-y divide-separator rounded-[10px] bg-surface-alt/50">
           {plan.add.map((entry) => (
-            <li key={`${entry.draft.issuer}:${entry.draft.account}:${entry.draft.secret}`} className="px-3 py-2">
+            <li
+              key={`${entry.draft.issuer}:${entry.draft.account}:${entry.draft.secret}`}
+              className="px-3 py-2"
+            >
               <PreviewRow draft={entry.draft} />
               {entry.note && (
-                <p className="mt-1 text-[11px] leading-relaxed text-warn">{entry.note}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-warn">
+                  {message(describeNote(entry.note))}
+                </p>
               )}
             </li>
           ))}
@@ -281,7 +302,7 @@ function Preview({
       {plan.skip.length > 0 && (
         <details className="rounded-[8px] bg-surface-alt/40 px-3 py-2">
           <summary className="cursor-pointer text-[12px] text-fg-muted">
-            已存在、不会重复添加的 {plan.skip.length} 条
+            {t('import.skip-summary', { count: plan.skip.length })}
           </summary>
           <ul className="mt-2 space-y-1">
             {plan.skip.map((entry) => (
@@ -289,23 +310,23 @@ function Preview({
                 key={`skip:${entry.draft.issuer}:${entry.draft.account}:${entry.draft.secret}`}
                 className="text-[11px] leading-relaxed text-fg-muted"
               >
-                {labelOf(entry.draft)} —— {entry.reason}
+                {labelOf(entry.draft, t)} —— {message(describeSkip(entry.reason))}
               </li>
             ))}
           </ul>
         </details>
       )}
 
-      {plan.issues.length > 0 && (
+      {issues.length > 0 && (
         <ul className="space-y-1 rounded-[8px] bg-danger/5 px-3 py-2">
-          {plan.issues.slice(0, 6).map((issue, index) => (
-            <li key={`issue:${index}`} className="text-[11px] leading-relaxed text-danger">
+          {shown.map((issue) => (
+            <li key={issue} className="text-[11px] leading-relaxed text-danger">
               {issue}
             </li>
           ))}
-          {plan.issues.length > 6 && (
+          {issues.length > ISSUES_SHOWN && (
             <li className="text-[11px] leading-relaxed text-danger">
-              还有 {plan.issues.length - 6} 条同类问题
+              {t('import.issues.more', { count: issues.length - ISSUES_SHOWN })}
             </li>
           )}
         </ul>
@@ -313,44 +334,45 @@ function Preview({
 
       <div className="space-y-1.5 pt-1">
         <Button disabled={busy || plan.add.length === 0} onClick={onConfirm}>
-          {busy ? '导入中…' : `确认导入 ${plan.add.length} 条`}
+          {busy ? t('import.importing') : t('import.confirm', { count: plan.add.length })}
         </Button>
         <TextButton className="w-full" onClick={onReset} disabled={busy}>
-          重新选择
+          {t('import.reset')}
         </TextButton>
       </div>
 
       {plan.add.length === 0 && (
-        <p className="text-[11px] leading-relaxed text-fg-muted">
-          没有需要新增的账户。已有的不会被覆盖，可以放心返回。
-        </p>
+        <p className="text-[11px] leading-relaxed text-fg-muted">{t('import.nothing-new')}</p>
       )}
     </div>
   );
 }
 
+/** 问题列表超过这个数就折起来，剩下的只报个数 —— 一屏全铺开会把「确认导入」挤出视野 */
+const ISSUES_SHOWN = 6;
+
 /** 预览里只显示名字与参数，**绝不显示密钥**：这一屏可能会被截图、被旁边的人看到 */
 function PreviewRow({ draft }: { draft: OtpAuthParams }) {
+  const t = useT();
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="truncate text-[12px] text-fg">{labelOf(draft)}</span>
+      <span className="truncate text-[12px] text-fg">{labelOf(draft, t)}</span>
       <span className="shrink-0 font-digit text-[11px] text-fg-muted">
-        {draft.algorithm} · {draft.digits} 位{draft.period === 30 ? '' : ` · ${draft.period} 秒`}
+        {draft.period === 30
+          ? t('draft.meta', { algorithm: draft.algorithm, digits: draft.digits })
+          : t('draft.meta.period', {
+              algorithm: draft.algorithm,
+              digits: draft.digits,
+              period: draft.period,
+            })}
       </span>
     </div>
   );
 }
 
-function labelOf(draft: OtpAuthParams): string {
-  if (draft.issuer && draft.account) return `${draft.issuer} · ${draft.account}`;
-  return draft.issuer || draft.account || '(未命名账户)';
-}
-
-function describe(cause: unknown): string {
-  // 密码错与文件损坏在 GCM 下不可区分，别假装能分得开
-  if (cause instanceof CryptoError && cause.reason === 'wrong-key') {
-    return '密码不对，或者这份文件已经损坏';
+function labelOf(draft: OtpAuthParams, t: Translate): string {
+  if (draft.issuer && draft.account) {
+    return t('name.dot-joined', { issuer: draft.issuer, account: draft.account });
   }
-  if (cause instanceof Error) return cause.message;
-  return '导入失败，请换一份文件试试';
+  return draft.issuer || draft.account || t('common.unnamed');
 }

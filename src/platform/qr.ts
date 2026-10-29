@@ -25,7 +25,7 @@ function toCanvas(source: ImageBitmap, width: number, height: number): ImageData
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new QrError('not-image', '当前环境画不出画布，无法识别图片');
+  if (!context) throw new QrError('not-image', 'canvas 2d context unavailable');
   // 白底：带透明通道的截图直接铺在画布上会变成黑底，二维码会扫不出来
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, width, height);
@@ -52,7 +52,7 @@ export async function decodeQrImage(blob: Blob): Promise<string> {
   try {
     bitmap = await createImageBitmap(blob);
   } catch {
-    throw new QrError('not-image', '这不是一张能打开的图片');
+    throw new QrError('not-image', 'not a readable image');
   }
 
   try {
@@ -70,12 +70,12 @@ export async function decodeQrImage(blob: Blob): Promise<string> {
     bitmap.close();
   }
 
-  throw new QrError('no-code', '图片里没有找到二维码，换一张更清晰、只含二维码的截图试试');
+  throw new QrError('no-code', 'no qr code found in image');
 }
 
 /** 文件选择框与拖放都给的是 File，转一层只是为了把"不是图片"的错误说清楚 */
 export async function decodeQrFile(file: File): Promise<string> {
-  if (file.size === 0) throw new QrError('not-image', '这个文件是空的');
-  if (file.size > 20 * 1024 * 1024) throw new QrError('not-image', '图片太大了，请用 20MB 以内的');
+  if (file.size === 0) throw new QrError('not-image', 'empty file');
+  if (file.size > 20 * 1024 * 1024) throw new QrError('not-image', 'image larger than 20MB');
   return decodeQrImage(file);
 }

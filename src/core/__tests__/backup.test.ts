@@ -99,12 +99,13 @@ describe('明文导出 → 导入', () => {
     const parsed = await parseImport(text);
     expect(parsed.drafts).toHaveLength(1);
     expect(parsed.issues).toHaveLength(1);
-    expect(parsed.issues[0]).toMatch(/位数/);
+    expect(parsed.issues[0]).toEqual({ code: 'uri-bad-digits', value: '7' });
   });
 
   it('报错信息里不会把密钥带出来', async () => {
     const parsed = await parseImport(`otpauth://totp/bad?secret=????&algorithm=SHA1`);
-    expect(parsed.issues.join(' ')).not.toContain('????');
+    // 诊断里只留原因码，整个对象序列化出来也不该出现那串密钥
+    expect(JSON.stringify(parsed.issues)).not.toContain('????');
   });
 });
 
@@ -193,7 +194,7 @@ describe('别的工具导出的裸 JSON 数组', () => {
     const parsed = await parseImport(text);
     expect(parsed.drafts).toHaveLength(1);
     expect(parsed.issues).toHaveLength(1);
-    expect(parsed.issues[0]).toContain('第 2 条');
+    expect(parsed.issues[0]).toEqual({ code: 'entry-bad-secret', index: 1 });
   });
 });
 
@@ -240,27 +241,27 @@ describe('planImport · 只做加法', () => {
     const existing = [makeAccount('另一个名字', 'x@example.com', RFC_SECRET)];
     const plan = planImport(existing, parsed([draft()]));
     expect(plan.add).toHaveLength(0);
-    expect(plan.skip[0]?.reason).toContain('已存在');
+    expect(plan.skip[0]?.reason).toBe('already-exists');
   });
 
   it('同名不同密钥 → 新增并标注，绝不覆盖', () => {
     const existing = [makeAccount('示例', 'a@example.com', RFC_SECRET_2)];
     const plan = planImport(existing, parsed([draft()]));
     expect(plan.add).toHaveLength(1);
-    expect(plan.add[0]?.note).toContain('同名');
+    expect(plan.add[0]?.note).toBe('label-collision');
   });
 
   it('文件内部重复的密钥只收一条', () => {
     const plan = planImport([], parsed([draft(), draft({ account: 'b@example.com' })]));
     expect(plan.add).toHaveLength(1);
     expect(plan.skip).toHaveLength(1);
-    expect(plan.skip[0]?.reason).toContain('重复');
+    expect(plan.skip[0]?.reason).toBe('duplicate-in-file');
   });
 
   it('名字大小写不同也算同名', () => {
     const existing = [makeAccount('Example', 'A@Example.com', RFC_SECRET_2)];
     const plan = planImport(existing, parsed([draft({ issuer: 'example', account: 'a@example.COM' })]));
-    expect(plan.add[0]?.note).toContain('同名');
+    expect(plan.add[0]?.note).toBe('label-collision');
   });
 });
 

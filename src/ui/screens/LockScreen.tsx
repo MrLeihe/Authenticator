@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { CryptoError } from '@/core/crypto';
 import { PasswordInput } from '../components/PasswordInput';
 import { PrimaryButton, TextButton } from '../components/Button';
 import { SetPasswordForm } from '../components/SetPasswordForm';
 import { KeyIcon, LockIcon } from '../components/Icons';
+import { useErrorText } from '../errors';
+import { useT } from '../i18n';
 import { useAppStore } from '../store';
 
 /**
@@ -13,6 +14,8 @@ import { useAppStore } from '../store';
  * 不换的话下次还得再用一次恢复码。换掉之后新的恢复码立刻展示一次。
  */
 export function LockScreen() {
+  const t = useT();
+  const errorText = useErrorText();
   const canRecover = useAppStore((s) => s.canRecover);
   const notice = useAppStore((s) => s.notice);
   const unlock = useAppStore((s) => s.unlockWithPassword);
@@ -31,7 +34,7 @@ export function LockScreen() {
     try {
       await unlock(password);
     } catch (cause) {
-      setError(describe(cause));
+      setError(errorText(cause));
       setPassword('');
     } finally {
       setBusy(false);
@@ -45,17 +48,15 @@ export function LockScreen() {
       </span>
 
       <h1 className="text-[17px] font-semibold tracking-tight">
-        {mode === 'password' ? '已锁定' : '用恢复码解锁'}
+        {mode === 'password' ? t('lock.title') : t('lock.recovery.title')}
       </h1>
       <p className="mt-1.5 text-[12px] leading-relaxed text-fg-muted">
-        {mode === 'password'
-          ? '输入密码后才会显示验证码。'
-          : '输入之前记下的恢复码，再设一个新密码。旧密码会失效。'}
+        {mode === 'password' ? t('lock.body') : t('lock.recovery.body')}
       </p>
 
       {notice && mode === 'password' && (
         <p className="mt-3 border-l-2 border-accent/50 pl-2.5 text-[11px] leading-relaxed text-fg-muted">
-          {notice}
+          {t(notice)}
         </p>
       )}
 
@@ -63,7 +64,7 @@ export function LockScreen() {
         {mode === 'password' ? (
           <>
             <PasswordInput
-              label="密码"
+              label={t('lock.password')}
               value={password}
               onChange={setPassword}
               autoFocus
@@ -76,7 +77,7 @@ export function LockScreen() {
               disabled={busy || password.length === 0}
               onClick={() => void submitPassword()}
             >
-              {busy ? '解锁中…' : '解锁'}
+              {busy ? t('lock.unlocking') : t('lock.unlock')}
             </PrimaryButton>
           </>
         ) : (
@@ -86,7 +87,7 @@ export function LockScreen() {
                 htmlFor="recovery-code"
                 className="mb-1.5 block text-[12px] font-medium text-fg-muted"
               >
-                恢复码
+                {t('lock.recovery.label')}
               </label>
               <input
                 id="recovery-code"
@@ -102,9 +103,8 @@ export function LockScreen() {
             </div>
 
             <SetPasswordForm
-              submitLabel="重设密码并解锁"
+              submitKey="lock.recovery.submit"
               busy={busy}
-              describeError={describe}
               onSubmit={async (newPassword) => {
                 setBusy(true);
                 try {
@@ -127,11 +127,11 @@ export function LockScreen() {
               setError(null);
             }}
           >
-            {mode === 'password' ? '忘记密码？用恢复码' : '返回输入密码'}
+            {mode === 'password' ? t('lock.forgot') : t('lock.back-to-password')}
           </TextButton>
         ) : (
           <p className="text-center text-[11px] leading-relaxed text-fg-muted">
-            没有设置恢复码，只能靠密码解锁。
+            {t('lock.no-recovery')}
           </p>
         )}
       </div>
@@ -139,16 +139,8 @@ export function LockScreen() {
   );
 }
 
-/** 只有"解不开"是能确定告诉用户的，其余都照实说 */
-export function describe(cause: unknown): string {
-  if (cause instanceof CryptoError && cause.reason === 'wrong-key') {
-    return '密码或恢复码不对，再试一次';
-  }
-  return cause instanceof Error ? cause.message : '操作失败，请重试';
-}
-
 /** 边输边分组：既好看，也顺手挡掉粘贴进来的空格与多余横线 */
-export function formatRecoveryInput(raw: string): string {
+function formatRecoveryInput(raw: string): string {
   const cleaned = raw
     .replace(/[^a-zA-Z0-9]/g, '')
     .toUpperCase()

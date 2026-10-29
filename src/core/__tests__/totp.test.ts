@@ -113,10 +113,10 @@ describe('HOTP 原语', () => {
   });
 
   it('拒绝空密钥和非法计数器', async () => {
-    await expect(hotp(new Uint8Array(0), 0)).rejects.toThrow(/密钥为空/);
+    await expect(hotp(new Uint8Array(0), 0)).rejects.toThrow(/secret is empty/);
     const key = ascii('12345678901234567890');
-    await expect(hotp(key, -1)).rejects.toThrow(/计数器非法/);
-    await expect(hotp(key, 1.5)).rejects.toThrow(/计数器非法/);
+    await expect(hotp(key, -1)).rejects.toThrow(/invalid counter/);
+    await expect(hotp(key, 1.5)).rejects.toThrow(/invalid counter/);
   });
 });
 

@@ -192,7 +192,8 @@ describe('密码策略', () => {
   it('太短给出具体差几位', () => {
     const result = checkPassword('abc');
     expect(result.ok).toBe(false);
-    expect(result.issues[0]).toContain('8');
+    // 断原因码与数字：说成哪句话是界面层的事
+    expect(result.issues[0]).toEqual({ code: 'too-short', min: 8, actual: 3 });
   });
 
   it('20 个以上相同字符被判为凑长度', () => {

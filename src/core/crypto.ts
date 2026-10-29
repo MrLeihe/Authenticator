@@ -88,7 +88,7 @@ export function base64ToBytes(text: string): Uint8Array {
   try {
     binary = atob(text);
   } catch {
-    throw new CryptoError('malformed', 'base64 解码失败');
+    throw new CryptoError('malformed', 'base64 decode failed');
   }
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
@@ -99,10 +99,10 @@ export function base64ToBytes(text: string): Uint8Array {
 export function normalizeRecoveryCode(input: string): string {
   const cleaned = input.replace(/[\s-]/g, '').toUpperCase();
   if (!/^[A-Z2-7]+$/.test(cleaned)) {
-    throw new CryptoError('malformed', '恢复码含有非 base32 字符');
+    throw new CryptoError('malformed', 'recovery code contains non-base32 characters');
   }
   if (cleaned.length !== (RECOVERY_BYTES * 8) / 5) {
-    throw new CryptoError('malformed', `恢复码应为 32 个字符，实际 ${cleaned.length}`);
+    throw new CryptoError('malformed', `recovery code should be 32 chars, got ${cleaned.length}`);
   }
   return cleaned;
 }
@@ -135,7 +135,7 @@ export async function deriveKek(
   iterations: number = PBKDF2_ITERATIONS,
 ): Promise<CryptoKey> {
   if (salt.length !== SALT_BYTES) {
-    throw new CryptoError('malformed', `salt 应为 ${SALT_BYTES} 字节`);
+    throw new CryptoError('malformed', `salt should be ${SALT_BYTES} bytes`);
   }
   const base = await subtle().importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, [
     'deriveKey',
@@ -159,7 +159,7 @@ export async function deriveKek(
 export async function deriveRecoveryKek(code: string): Promise<CryptoKey> {
   const raw = base32Decode(normalizeRecoveryCode(code));
   if (raw.length !== RECOVERY_BYTES) {
-    throw new CryptoError('malformed', `恢复码应解出 ${RECOVERY_BYTES} 字节`);
+    throw new CryptoError('malformed', `recovery code should decode to ${RECOVERY_BYTES} bytes`);
   }
   const material = new Uint8Array(raw.length + AAD_RECOVERY_LABEL.length);
   material.set(new TextEncoder().encode(AAD_RECOVERY_LABEL), 0);
@@ -182,7 +182,7 @@ export function generateRecoveryCode(): string {
 async function toAesKey(key: CryptoKey | Uint8Array): Promise<CryptoKey> {
   if (key instanceof CryptoKey) return key;
   if (key.length !== DEK_BYTES) {
-    throw new CryptoError('malformed', `AES 密钥应为 ${DEK_BYTES} 字节，实际 ${key.length}`);
+    throw new CryptoError('malformed', `AES key should be ${DEK_BYTES} bytes, got ${key.length}`);
   }
   return subtle().importKey('raw', view(key), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
@@ -209,12 +209,12 @@ async function open(
   blob: SealedBlob,
   aad: string,
 ): Promise<Uint8Array> {
-  if (!blob || typeof blob !== 'object') throw new CryptoError('malformed', '密文不是对象');
+  if (!blob || typeof blob !== 'object') throw new CryptoError('malformed', 'blob is not an object');
   if (blob.v !== 1) throw new CryptoError('unsupported-version', String(blob.v));
   const iv = base64ToBytes(blob.iv);
-  if (iv.length !== IV_BYTES) throw new CryptoError('malformed', 'IV 长度不对');
+  if (iv.length !== IV_BYTES) throw new CryptoError('malformed', 'bad iv length');
   const ct = base64ToBytes(blob.ct);
-  if (ct.length <= 16) throw new CryptoError('malformed', '密文短于 GCM tag');
+  if (ct.length <= 16) throw new CryptoError('malformed', 'ciphertext shorter than GCM tag');
   const aes = await toAesKey(key);
   try {
     const plain = await subtle().decrypt(
@@ -243,7 +243,7 @@ export async function decryptJson<T>(
   try {
     return JSON.parse(new TextDecoder().decode(plain)) as T;
   } catch {
-    throw new CryptoError('malformed', '解密后不是合法 JSON');
+    throw new CryptoError('malformed', 'decrypted payload is not JSON');
   }
 }
 
@@ -264,29 +264,34 @@ export async function openExport<T>(key: CryptoKey | Uint8Array, blob: SealedBlo
   try {
     return JSON.parse(new TextDecoder().decode(plain)) as T;
   } catch {
-    throw new CryptoError('malformed', '解密后不是合法 JSON');
+    throw new CryptoError('malformed', 'decrypted payload is not JSON');
   }
 }
 
 /** 用 KEK 包装 DEK */
 export async function wrapDek(dek: Uint8Array, kek: CryptoKey): Promise<SealedBlob> {
-  if (dek.length !== DEK_BYTES) throw new CryptoError('malformed', 'DEK 长度不对');
+  if (dek.length !== DEK_BYTES) throw new CryptoError('malformed', 'bad dek length');
   return seal(kek, dek, AAD_DEK);
 }
 
 /** 解出 DEK。密码错 / 恢复码错 / 密文被篡改都会抛 `wrong-key`。 */
 export async function unwrapDek(blob: SealedBlob, kek: CryptoKey): Promise<Uint8Array> {
   const dek = await open(kek, blob, AAD_DEK);
-  if (dek.length !== DEK_BYTES) throw new CryptoError('malformed', '解出的 DEK 长度不对');
+  if (dek.length !== DEK_BYTES) throw new CryptoError('malformed', 'unwrapped dek has bad length');
   return dek;
 }
 
 // ---------------------------------------------------------------- 密码强度
 
+/** 密码不合格的具体原因。文案在 `ui/i18n.ts`，这里只说"哪一条不满足"。 */
+export type PasswordIssue =
+  | { code: 'too-short'; min: number; actual: number }
+  | { code: 'repeated' };
+
 export interface PasswordCheck {
   ok: boolean;
-  /** 给用户看的具体理由，空数组表示通过 */
-  issues: string[];
+  /** 具体理由，空数组表示通过 */
+  issues: PasswordIssue[];
 }
 
 /**
@@ -294,13 +299,13 @@ export interface PasswordCheck {
  * 强制字符类会把用户推向 `Passw0rd!` 这种可预测结构，反而更差。
  */
 export function checkPassword(password: string): PasswordCheck {
-  const issues: string[] = [];
+  const issues: PasswordIssue[] = [];
   if (password.length < MIN_PASSWORD_LENGTH) {
-    issues.push(`至少 ${MIN_PASSWORD_LENGTH} 位（现在 ${password.length} 位）`);
+    issues.push({ code: 'too-short', min: MIN_PASSWORD_LENGTH, actual: password.length });
   }
   // 20 个连续字符以上的重复，多半是压着键盘凑长度
   if (/(.)\1{19,}/u.test(password)) {
-    issues.push('不要用同一个字符重复凑长度');
+    issues.push({ code: 'repeated' });
   }
   return { ok: issues.length === 0, issues };
 }

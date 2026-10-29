@@ -24,6 +24,9 @@ import {
   unlockWithPassword as unlockVaultWithPassword,
 } from '@/platform/vault-service';
 import { DEMO_ACCOUNTS } from './fixtures/demo';
+// 只借类型：值导出会形成 store → i18n → store 的运行时环。`verbatimModuleSyntax`
+// 保证这行被整句擦掉，编译产物里不会留下 require。
+import type { MessageKey, Vars } from './i18n';
 
 export type ViewMode = 'normal' | 'compact' | 'masked';
 
@@ -48,10 +51,22 @@ export type Sheet =
 /** 表单最终要落成的一次写入；新增和编辑只差一个 id */
 export type AccountDraft = OtpAuthParams;
 
+/**
+ * 提示条只带**键**，不带成句的文案。
+ *
+ * 原因很实在：一次 toast 会活过若干次渲染和一次语言切换，
+ * 存成字符串的话它就是"发出那一刻"的语言，切成英文之后还挂在那儿。
+ */
 export interface Toast {
   id: number;
-  text: string;
+  message: MessageKey;
+  vars: Vars | undefined;
   tone: 'normal' | 'danger';
+}
+
+export interface ToastOptions {
+  vars?: Vars | undefined;
+  tone?: 'normal' | 'danger' | undefined;
 }
 
 interface AppState {
@@ -60,7 +75,7 @@ interface AppState {
   /** 锁屏上有没有"恢复码"这条路可走 */
   canRecover: boolean;
   /** 锁屏上的一句提示，例如「刚设置的密码，请再输一次确认」 */
-  notice: string | null;
+  notice: MessageKey | null;
   /**
    * 待展示的恢复码。放在顶层而不是某个界面里：
    * 生成恢复码的同时状态已经切到"已上锁"，界面会被换掉，
@@ -96,6 +111,11 @@ interface AppState {
 
   openSheet: (sheet: Sheet) => void;
   closeSheet: () => void;
+  /**
+   * 退一层。头部的返回箭头和 Esc 都走这里 —— 两条路由同一个动作，
+   * 就不会出现"键盘按 Esc 掉回列表、点按钮却回设置"这种分叉。
+   */
+  back: () => void;
   addAccount: (draft: AccountDraft) => Promise<void>;
   /** 从 `otpauth://` 地址添加；解析失败会抛 OtpAuthError */
   addAccountFromUri: (uri: string, known?: OtpAuthParams) => Promise<void>;
@@ -112,7 +132,7 @@ interface AppState {
   setQuery: (query: string) => void;
   setView: (view: ViewMode) => void;
   reveal: (id: string | null) => void;
-  showToast: (text: string, tone?: 'normal' | 'danger') => void;
+  showToast: (message: MessageKey, options?: ToastOptions) => void;
   dismissToast: (id: number) => void;
 }
 
@@ -165,7 +185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             phase: 'locked',
             vault: null,
             canRecover: true,
-            notice: '请再输入一次刚设置的密码确认',
+            notice: 'notice.confirm-new-password',
             pendingRecovery: recoveryCode,
           }
         : { phase: 'unlocked', vault: await maybeSeedDemo(vault), canRecover: false, notice: null },
@@ -186,7 +206,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       phase: 'locked',
       vault: null,
       canRecover: true,
-      notice: '密码已重设，请用新密码解锁',
+      notice: 'notice.password-reset',
       pendingRecovery: recoveryCode,
     });
     return recoveryCode;
@@ -198,7 +218,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       phase: 'locked',
       vault: null,
       canRecover: true,
-      notice: '请用新密码解锁',
+      notice: 'notice.password-set',
       pendingRecovery: recoveryCode,
     });
     return recoveryCode;
@@ -224,7 +244,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   mutate: async (fn) => {
     const current = get().vault;
-    if (!current) throw new Error('还没解锁，不能改数据');
+    if (!current) throw new Error('vault is locked');
     const next = fn(current);
     set({ vault: next });
     try {
@@ -245,10 +265,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSheet: (sheet) => set({ sheet }),
   closeSheet: () => set({ sheet: null }),
 
+  back: () => {
+    const sheet = get().sheet;
+    if (!sheet) return;
+    // 导入/导出是从设置里进来的：返回时回到设置，而不是直接掉回列表
+    if ((sheet.kind === 'export' || sheet.kind === 'import') && sheet.from === 'settings') {
+      set({ sheet: { kind: 'settings' } });
+      return;
+    }
+    set({ sheet: null });
+  },
+
   addAccount: async (draft) => {
     await get().mutate((vault) => addAccountToVault(vault, draft));
     set({ sheet: null });
-    get().showToast('已添加账户');
+    get().showToast('toast.added');
   },
 
   addAccountFromUri: async (uri, known) => {
@@ -269,14 +300,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       }),
     );
     set({ sheet: null });
-    get().showToast('已保存');
+    get().showToast('toast.saved');
   },
 
   deleteAccount: async (id) => {
     await get().mutate((vault) => removeAccountFromVault(vault, id));
     // 删掉的正好是临时揭示的那一行时，别留一个指向空行的状态
     set((state) => ({ sheet: null, revealedId: state.revealedId === id ? null : state.revealedId }));
-    get().showToast('已删除');
+    get().showToast('toast.deleted');
   },
 
   togglePin: async (id) => {
@@ -296,7 +327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       drafts.reduce((acc, draft) => addAccountToVault(acc, draft), vault),
     );
     set({ sheet: null });
-    get().showToast(`已导入 ${drafts.length} 个账户`);
+    get().showToast('toast.imported', { vars: { count: drafts.length } });
     return drafts.length;
   },
 
@@ -308,7 +339,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       vault: null,
       sheet: null,
       canRecover: true,
-      notice: '密码已更新，请用新密码解锁',
+      notice: 'notice.password-updated',
       pendingRecovery: recoveryCode,
     });
     return recoveryCode;
@@ -335,9 +366,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  showToast: (text, tone = 'normal') => {
+  showToast: (message, options) => {
     toastSeq += 1;
-    set({ toast: { id: toastSeq, text, tone } });
+    set({ toast: { id: toastSeq, message, vars: options?.vars, tone: options?.tone ?? 'normal' } });
   },
   dismissToast: (id) => set((s) => (s.toast && s.toast.id === id ? { toast: null } : s)),
 }));
@@ -371,16 +402,26 @@ export function useSettings(): Settings {
 /** 把"用户有动作"翻译成"刷新解锁时间点"，由 useAutoLock 节流调用 */
 export { touchUnlocked };
 
-/** 排序：置顶优先，其次按设置里的排序方式 */
-export function sortAccounts(accounts: readonly Account[], sortBy: Settings['sortBy']): Account[] {
+/**
+ * 排序：置顶优先，其次按设置里的排序方式。
+ *
+ * 排序语言跟着界面语言走：英文界面里 `Zulip` 应该排在 `apple` 后面，
+ * 而中文的拼音序会把两者排反。这条只影响「按网站 / 按账户」两种。
+ */
+export function sortAccounts(
+  accounts: readonly Account[],
+  sortBy: Settings['sortBy'],
+  lang: 'zh' | 'en' = 'zh',
+): Account[] {
+  const locale = lang === 'zh' ? 'zh-Hans-CN' : 'en';
   const list = [...accounts];
   list.sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     if (sortBy === 'issuer') {
-      const byIssuer = a.issuer.localeCompare(b.issuer, 'zh-Hans-CN');
+      const byIssuer = a.issuer.localeCompare(b.issuer, locale);
       if (byIssuer !== 0) return byIssuer;
     } else if (sortBy === 'name') {
-      const byName = a.account.localeCompare(b.account, 'zh-Hans-CN');
+      const byName = a.account.localeCompare(b.account, locale);
       if (byName !== 0) return byName;
     }
     return a.order - b.order;

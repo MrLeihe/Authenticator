@@ -1,8 +1,9 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { formatCode } from '@/core/totp';
 import type { Account } from '@/core/types';
 import { copyText, scheduleClipboardClear } from '@/platform/clipboard';
+import { useT } from '../i18n';
 import { useAppStore, useSettings, type ViewMode } from '../store';
 import { Countdown } from './Countdown';
 import { CopyIcon, GripIcon, PencilIcon, PinIcon, TrashIcon } from './Icons';
@@ -51,6 +52,7 @@ export const AccountRow = memo(function AccountRow({
   onDragEnd,
   onDrop,
 }: AccountRowProps) {
+  const t = useT();
   const showToast = useAppStore((s) => s.showToast);
   const openSheet = useAppStore((s) => s.openSheet);
   const togglePin = useAppStore((s) => s.togglePin);
@@ -65,15 +67,15 @@ export const AccountRow = memo(function AccountRow({
 
   const copy = useCallback(async () => {
     if (invalid) {
-      showToast('密钥无效，无法生成验证码', 'danger');
+      showToast('toast.invalid-secret', { tone: 'danger' });
       return;
     }
     const ok = await copyText(code);
     if (ok) {
-      showToast('已复制验证码');
+      showToast('toast.copied');
       scheduleClipboardClear(clearSeconds);
     } else {
-      showToast('复制失败', 'danger');
+      showToast('toast.copy-failed', { tone: 'danger' });
     }
   }, [code, invalid, clearSeconds, showToast]);
 
@@ -84,6 +86,28 @@ export const AccountRow = memo(function AccountRow({
     }
     void copy();
   }, [masked, onReveal, account.id, copy]);
+
+  /**
+   * 验证码翻页时播报一句。
+   *
+   * 只在焦点正落在这一行时才播报：一屏十几行同时换码，全播出去在读屏里
+   * 只是一串听不清的噪音。也不念数字本身 —— 验证码马上就会被复制走，
+   * 而"把一串一次性密码念出声"在没有耳机的场合是纯粹的泄露。
+   */
+  const row = useRef<HTMLDivElement>(null);
+  const previousCode = useRef(code);
+  const [announcement, setAnnouncement] = useState('');
+  useEffect(() => {
+    if (previousCode.current === code) return;
+    previousCode.current = code;
+    if (masked) return;
+    if (!row.current?.contains(document.activeElement)) return;
+    // aria-live 只在文字"变了"的时候才开口。同一句话每 30 秒要说一次，
+    // 直接写同样的字符串读屏会当成没变化，所以先清空、下一拍再补上
+    setAnnouncement('');
+    const timer = setTimeout(() => setAnnouncement(t('row.code-refreshed')), 60);
+    return () => clearTimeout(timer);
+  }, [code, masked, t]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -110,7 +134,9 @@ export const AccountRow = memo(function AccountRow({
     onDrop(account.id, event.clientY > rect.top + rect.height / 2);
   };
 
-  const title = account.account ? `${account.issuer}：${account.account}` : account.issuer;
+  const title = account.account
+    ? t('name.with-issuer', { issuer: account.issuer, account: account.account })
+    : account.issuer;
   const display = masked ? '••• •••' : invalid ? '———' : formatCode(code);
   const codeClass = hidden ? 'text-fg-muted' : urgent ? 'text-warn' : 'text-code';
 
@@ -121,7 +147,7 @@ export const AccountRow = memo(function AccountRow({
   const actions = (
     <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
       <IconButton
-        label={account.pinned ? '取消置顶' : '置顶'}
+        label={account.pinned ? t('row.unpin') : t('row.pin')}
         active={account.pinned}
         onClick={(e) => {
           e.stopPropagation();
@@ -131,7 +157,7 @@ export const AccountRow = memo(function AccountRow({
         <PinIcon size={14} filled={account.pinned} />
       </IconButton>
       <IconButton
-        label="编辑"
+        label={t('row.edit')}
         onClick={(e) => {
           e.stopPropagation();
           openSheet({ kind: 'edit', id: account.id });
@@ -140,7 +166,7 @@ export const AccountRow = memo(function AccountRow({
         <PencilIcon size={14} />
       </IconButton>
       <IconButton
-        label="删除"
+        label={t('row.delete')}
         onClick={(e) => {
           e.stopPropagation();
           openSheet({ kind: 'delete', id: account.id });
@@ -153,12 +179,21 @@ export const AccountRow = memo(function AccountRow({
 
   return (
     <div
+      ref={row}
       className={`row-divider group relative ${compact ? 'h-11' : 'h-[92px]'} ${
         dragging ? 'opacity-40' : ''
       } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
       role="button"
       tabIndex={0}
-      aria-label={`${title}，${masked ? '已隐藏' : '点击复制验证码'}`}
+      // 读屏用户看不到大字码，所以把验证码本身也念出来 —— 否则"点击复制"
+      // 等于让人复制一个还没听到的东西
+      aria-label={
+        invalid
+          ? t('row.aria.invalid', { name: title })
+          : masked
+            ? t('row.aria.masked', { name: title })
+            : t('row.aria.copy', { name: title, code: formatCode(code) })
+      }
       onClick={activate}
       onKeyDown={onKeyDown}
       draggable={draggable}
@@ -238,6 +273,12 @@ export const AccountRow = memo(function AccountRow({
           </div>
         </div>
       )}
+
+      {/* 播报区必须一直挂着：读屏只监听节点的文字变化，
+          临到要说话才插入节点，那句话多半不会被念出来 */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </span>
     </div>
   );
 });

@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
+import App, { Boundary } from './App';
 import '@/ui/styles/globals.css';
 import { applyTheme } from '@/ui/theme';
 
@@ -11,6 +11,8 @@ if (!rootEl) throw new Error('root element missing');
 
 createRoot(rootEl).render(
   <StrictMode>
-    <App />
+    <Boundary>
+      <App />
+    </Boundary>
   </StrictMode>,
 );

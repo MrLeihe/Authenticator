@@ -4,6 +4,10 @@ import { formatCode, totp } from '@/core/totp';
 import type { Algorithm } from '@/core/types';
 import type { OtpAuthParams } from '@/core/otpauth';
 import { useTick } from '../hooks/useTick';
+import { describeError, useMessage } from '../errors';
+import type { Message } from '../errors';
+import { useT } from '../i18n';
+import type { MessageKey } from '../i18n';
 import { Button } from './Button';
 import { Segmented, TextInput } from './TextInput';
 
@@ -16,15 +20,17 @@ import { Segmented, TextInput } from './TextInput';
  */
 export function AccountForm({
   initial,
-  submitLabel,
+  submitKey,
   onSubmit,
   onCancel,
 }: {
   initial?: Partial<OtpAuthParams>;
-  submitLabel: string;
+  submitKey: MessageKey;
   onSubmit: (draft: OtpAuthParams) => Promise<void> | void;
   onCancel: () => void;
 }) {
+  const t = useT();
+  const message = useMessage();
   const [issuer, setIssuer] = useState(initial?.issuer ?? '');
   const [account, setAccount] = useState(initial?.account ?? '');
   const [secret, setSecret] = useState(initial?.secret ?? '');
@@ -32,7 +38,8 @@ export function AccountForm({
   const [digits, setDigits] = useState<6 | 8>(initial?.digits ?? 6);
   const [period, setPeriod] = useState(String(initial?.period ?? 30));
   const [advanced, setAdvanced] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // 存键不存句子：表单开着的时候用户可能切换语言，句子得跟着变
+  const [error, setError] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
 
   const normalizedSecret = secret.replace(/[\s-]/g, '').toUpperCase();
@@ -42,17 +49,17 @@ export function AccountForm({
   const submit = async () => {
     setError(null);
     if (!normalizedSecret) {
-      setError('密钥不能为空');
+      setError({ key: 'form.error.empty-secret' });
       return;
     }
     try {
       if (base32Decode(normalizedSecret).length === 0) throw new Error('empty');
     } catch {
-      setError('密钥不是合法的 base32，检查一下有没有漏字符');
+      setError({ key: 'form.error.bad-secret' });
       return;
     }
     if (!periodValid) {
-      setError('周期必须是 1 到 3600 之间的整数秒');
+      setError({ key: 'form.error.period' });
       return;
     }
 
@@ -67,7 +74,10 @@ export function AccountForm({
         period: periodNumber,
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存失败，请重试');
+      // 认不出来的失败（配额满、权限被收走）统一说"再试一次"，
+      // 底下那句英文报错对用户没有用
+      const described = describeError(cause);
+      setError(described.key === 'error.unknown' ? { key: 'form.save-failed' } : described);
       setBusy(false);
     }
   };
@@ -75,26 +85,26 @@ export function AccountForm({
   return (
     <div className="space-y-3">
       <TextInput
-        label="发行方 / 网站"
+        label={t('field.issuer')}
         value={issuer}
         onChange={setIssuer}
-        placeholder="例如 GitHub"
+        placeholder={t('field.issuer.placeholder')}
         autoFocus
         onEnter={() => void submit()}
       />
       <TextInput
-        label="账户名"
+        label={t('field.account')}
         value={account}
         onChange={setAccount}
-        placeholder="例如 you@example.com"
+        placeholder={t('field.account.placeholder')}
         onEnter={() => void submit()}
       />
       <TextInput
-        label="密钥"
+        label={t('field.secret')}
         value={secret}
         onChange={setSecret}
-        placeholder="通常是 16 或 32 位字母数字"
-        hint="网站给你的那串字母数字，空格和连字符可以保留"
+        placeholder={t('field.secret.placeholder')}
+        hint={t('field.secret.hint')}
         mono
         onEnter={() => void submit()}
       />
@@ -113,14 +123,14 @@ export function AccountForm({
           onClick={() => setAdvanced((open) => !open)}
           aria-expanded={advanced}
         >
-          {advanced ? '收起高级选项' : '高级选项（算法 / 位数 / 周期）'}
+          {t(advanced ? 'form.advanced.close' : 'form.advanced.open')}
         </Button>
       </div>
 
       {advanced && (
         <div className="space-y-3 rounded-[10px] bg-surface-alt/60 p-3">
           <Segmented
-            label="算法"
+            label={t('field.algorithm')}
             value={algorithm}
             onChange={setAlgorithm}
             options={[
@@ -130,35 +140,37 @@ export function AccountForm({
             ]}
           />
           <Segmented
-            label="位数"
+            label={t('field.digits')}
             value={digits}
             onChange={setDigits}
             options={[
-              { value: 6 as const, label: '6 位' },
-              { value: 8 as const, label: '8 位' },
+              { value: 6 as const, label: t('field.digits.6') },
+              { value: 8 as const, label: t('field.digits.8') },
             ]}
           />
           <TextInput
-            label="周期（秒）"
+            label={t('field.period')}
             value={period}
             onChange={setPeriod}
             inputMode="numeric"
-            error={period === '' || periodValid ? null : '只能是 1 到 3600 之间的整数'}
+            error={period === '' || periodValid ? null : t('field.period.error')}
           />
-          <p className="text-[11px] leading-relaxed text-fg-muted">
-            不知道就不用改。绝大多数网站用 SHA1 / 6 位 / 30 秒。
-          </p>
+          <p className="text-[11px] leading-relaxed text-fg-muted">{t('form.advanced.hint')}</p>
         </div>
       )}
 
-      {error && <p className="text-[11px] leading-relaxed text-danger">{error}</p>}
+      {error && (
+        <p role="alert" className="text-[11px] leading-relaxed text-danger">
+          {message(error)}
+        </p>
+      )}
 
       <div className="space-y-2 pt-1">
         <Button variant="primary" onClick={() => void submit()} disabled={busy}>
-          {busy ? '保存中…' : submitLabel}
+          {t(busy ? 'form.saving' : submitKey)}
         </Button>
         <Button variant="text" className="w-full" onClick={onCancel} disabled={busy}>
-          取消
+          {t('common.cancel')}
         </Button>
       </div>
     </div>
@@ -180,6 +192,7 @@ function CodePreview({
   digits: 6 | 8;
   period: number;
 }) {
+  const t = useT();
   const now = useTick(1000);
   const [state, setState] = useState<{ code: string; remaining: number } | 'invalid' | null>(null);
 
@@ -212,14 +225,14 @@ function CodePreview({
   if (!secret) {
     return (
       <p className="rounded-[8px] bg-surface-alt/60 px-3 py-2 text-[11px] text-fg-muted">
-        填入密钥后，这里会显示它此刻的验证码，方便你和手机上的码对一下。
+        {t('preview.empty')}
       </p>
     );
   }
   if (state === 'invalid') {
     return (
       <p className="rounded-[8px] bg-danger/10 px-3 py-2 text-[11px] text-danger">
-        密钥解不开，检查一下是不是少抄了几位
+        {t('preview.invalid')}
       </p>
     );
   }
@@ -227,7 +240,7 @@ function CodePreview({
   return (
     <div className="flex items-center justify-between rounded-[8px] bg-surface-alt/60 px-3 py-2">
       <span className="text-[11px] text-fg-muted">
-        {state ? '当前验证码，应和手机上一致' : '正在试算…'}
+        {t(state ? 'preview.ready' : 'preview.calculating')}
       </span>
       <span className="flex items-baseline gap-2">
         <span className="code text-[17px] text-code" dir="ltr">

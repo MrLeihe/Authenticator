@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { copyText } from '@/platform/clipboard';
+import { useT } from '../i18n';
 import { CheckIcon, CopyIcon, KeyIcon } from './Icons';
 import { PrimaryButton } from './Button';
 
@@ -14,15 +15,8 @@ import { PrimaryButton } from './Button';
  *    固定定位的浮层一旦高于弹窗就会被裁掉且无法滚动 ——
  *    底部那个"继续"按钮会直接摸不到。所以它是整屏替换，不是覆盖。
  */
-export function RecoveryCodeSheet({
-  code,
-  onDone,
-  subtitle = '忘记密码时，这是唯一能拿回账户的东西',
-}: {
-  code: string;
-  onDone: () => void;
-  subtitle?: string;
-}) {
+export function RecoveryCodeSheet({ code, onDone }: { code: string; onDone: () => void }) {
+  const t = useT();
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -43,9 +37,9 @@ export function RecoveryCodeSheet({
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-alt text-accent">
           <KeyIcon size={16} />
         </span>
-        <h2 className="text-[16px] font-semibold tracking-tight">记下恢复码</h2>
+        <h2 className="text-[16px] font-semibold tracking-tight">{t('recovery.title')}</h2>
       </div>
-      <p className="mb-4 text-[12px] leading-relaxed text-fg-muted">{subtitle}</p>
+      <p className="mb-4 text-[12px] leading-relaxed text-fg-muted">{t('recovery.subtitle')}</p>
 
       <div className="rounded-[12px] border border-separator bg-surface p-3">
         <div className="grid grid-cols-4 gap-x-3 gap-y-2">
@@ -65,14 +59,14 @@ export function RecoveryCodeSheet({
           onClick={() => void handleCopy()}
         >
           {copied ? <CheckIcon size={14} className="text-success" /> : <CopyIcon size={14} />}
-          {copied ? '已复制' : '复制恢复码'}
+          {copied ? t('recovery.copied') : t('recovery.copy')}
         </button>
       </div>
 
       <ul className="mt-3 space-y-1 text-[11px] leading-relaxed text-fg-muted">
-        <li>· 只显示这一次，关掉就再也看不到</li>
-        <li>· 抄在纸上或存进密码管理器，别只放在这台电脑里</li>
-        <li>· 任何人拿到它都能打开你的账户</li>
+        <li>· {t('recovery.tip.once')}</li>
+        <li>· {t('recovery.tip.store')}</li>
+        <li>· {t('recovery.tip.anyone')}</li>
       </ul>
 
       <div className="mt-auto pt-4">
@@ -83,10 +77,10 @@ export function RecoveryCodeSheet({
             onChange={(event) => setSaved(event.target.checked)}
             className="h-4 w-4 accent-[rgb(var(--accent))]"
           />
-          我已经把恢复码存好了
+          {t('recovery.saved')}
         </label>
         <PrimaryButton disabled={!saved} onClick={onDone}>
-          继续
+          {t('common.continue')}
         </PrimaryButton>
       </div>
     </div>

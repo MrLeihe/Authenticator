@@ -12,9 +12,10 @@ import {
   sealExport,
 } from './crypto';
 import type { SealedBlob } from './crypto';
+import type { Diagnostic } from './diagnostics';
 import { isMigrationUri, parseMigrationUri } from './migration';
 import type { MigrationBatch } from './migration';
-import { buildOtpauth, findOtpauthUris, parseOtpauth } from './otpauth';
+import { OtpAuthError, buildOtpauth, findOtpauthUris, parseOtpauth } from './otpauth';
 import type { OtpAuthParams } from './otpauth';
 import type { Account, Algorithm } from './types';
 import type { NewAccountInput } from './vault';
@@ -36,6 +37,7 @@ export const EXPORT_FORMAT = 'authenticator-export';
 export const EXPORT_VERSION = 1;
 
 export class ImportError extends Error {
+  /** `message` 只放英文调试串；界面按 `reason` 说话，见 `ui/i18n.ts`。 */
   constructor(
     readonly reason: 'not-export' | 'unsupported-version' | 'malformed' | 'encrypted' | 'empty',
     message: string,
@@ -82,7 +84,8 @@ export async function createEncryptedExport(
   now: Date = new Date(),
 ): Promise<string> {
   const check = checkPassword(password);
-  if (!check.ok) throw new CryptoError('malformed', check.issues.join('；'));
+  // 密码不合格是调用方的责任（界面在按钮旁就拦住了），这里只兜底，不给文案
+  if (!check.ok) throw new CryptoError('malformed', `weak export password: ${check.issues[0]?.code}`);
 
   const salt = randomBytes(SALT_BYTES);
   const kek = await deriveKek(password, salt);
@@ -108,10 +111,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const ALGORITHMS: readonly Algorithm[] = ['SHA1', 'SHA256', 'SHA512'];
 
-/** 校验一条来自外部文件的账户。错误信息里**绝不回显密钥**。 */
-function readParams(raw: unknown, index: number, issues: string[]): OtpAuthParams | null {
+/** 校验一条来自外部文件的账户。诊断里**绝不回显密钥**。 */
+function readParams(raw: unknown, index: number, issues: Diagnostic[]): OtpAuthParams | null {
   if (!isRecord(raw)) {
-    issues.push(`第 ${index + 1} 条不是对象，已跳过`);
+    issues.push({ code: 'entry-not-object', index });
     return null;
   }
   const secret = String(raw.secret ?? '')
@@ -124,7 +127,7 @@ function readParams(raw: unknown, index: number, issues: string[]): OtpAuthParam
     valid = false;
   }
   if (!valid) {
-    issues.push(`第 ${index + 1} 条的密钥不是合法 base32，已跳过`);
+    issues.push({ code: 'entry-bad-secret', index });
     return null;
   }
 
@@ -158,12 +161,12 @@ function fillDefaults(input: NewAccountInput): OtpAuthParams {
 }
 
 /** `{ accounts: [...] }` 与裸数组都收：别的工具导出的格式常常就是裸数组 */
-function readAccountList(raw: unknown): { drafts: OtpAuthParams[]; issues: string[] } {
+function readAccountList(raw: unknown): { drafts: OtpAuthParams[]; issues: Diagnostic[] } {
   const list = Array.isArray(raw) ? raw : isRecord(raw) && Array.isArray(raw.accounts) ? raw.accounts : null;
   if (!list) {
-    throw new ImportError('not-export', '这个 JSON 里没有账户列表，不像是本扩展导出的文件');
+    throw new ImportError('not-export', 'json has no account list');
   }
-  const issues: string[] = [];
+  const issues: Diagnostic[] = [];
   const drafts: OtpAuthParams[] = [];
   for (const [index, item] of list.entries()) {
     const params = readParams(item, index, issues);
@@ -182,23 +185,23 @@ function parseExportFile(text: string): EncryptedExportFile {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new ImportError('malformed', '这个文件不是合法的 JSON');
+    throw new ImportError('malformed', 'file is not valid json');
   }
   if (!isRecord(raw) || raw.format !== EXPORT_FORMAT) {
-    throw new ImportError('not-export', '这不是本扩展导出的文件');
+    throw new ImportError('not-export', 'not an export file');
   }
   const version = typeof raw.version === 'number' ? raw.version : 0;
   if (version > EXPORT_VERSION) {
     throw new ImportError(
       'unsupported-version',
-      `导出文件的版本 ${version} 比本扩展支持的新，请升级扩展后再导入`,
+      `export version ${version} is newer than supported`,
     );
   }
   if (raw.encrypted !== true) {
-    throw new ImportError('malformed', '导出文件缺少加密信息');
+    throw new ImportError('malformed', 'export file has no encryption info');
   }
   if (!isRecord(raw.kdf) || !isRecord(raw.payload)) {
-    throw new ImportError('malformed', '导出文件的结构不完整');
+    throw new ImportError('malformed', 'export file structure is incomplete');
   }
   return raw as unknown as EncryptedExportFile;
 }
@@ -220,7 +223,7 @@ export interface ParsedImport {
   kind: Exclude<ImportKind, 'encrypted-json' | 'empty'>;
   drafts: OtpAuthParams[];
   /** 逐条失败原因，空数组表示全部读出来了 */
-  issues: string[];
+  issues: Diagnostic[];
   /** 迁移码分批导出时为非 null */
   batch: MigrationBatch | null;
 }
@@ -235,13 +238,13 @@ export async function parseImport(text: string, password?: string): Promise<Pars
   const trimmed = text.trim();
   const kind = detectImportKind(trimmed);
   if (kind === 'empty') {
-    throw new ImportError('empty', '这段内容里没有找到可以导入的账户');
+    throw new ImportError('empty', 'no importable content');
   }
 
   if (kind === 'migration') {
     const result = parseMigrationUri(trimmed);
     // detect 已经确认过前缀，这里 null 只可能是竞态，按格式错处理
-    if (!result) throw new ImportError('malformed', '迁移码格式不对');
+    if (!result) throw new ImportError('malformed', 'bad migration uri');
     return {
       kind: 'migration',
       drafts: result.accounts.map(fillDefaults),
@@ -253,16 +256,16 @@ export async function parseImport(text: string, password?: string): Promise<Pars
   if (kind === 'encrypted-json') {
     const file = parseExportFile(trimmed);
     if (!password) {
-      throw new ImportError('encrypted', '这份备份是加密的，请输入导出时设置的密码');
+      throw new ImportError('encrypted', 'backup is encrypted');
     }
     const salt = base64ToBytes(file.kdf.salt);
     if (salt.length !== SALT_BYTES) {
-      throw new ImportError('malformed', '导出文件的盐长度不对');
+      throw new ImportError('malformed', 'bad salt length');
     }
     const iter = file.kdf.iter;
     // 迭代数来自文件，所以要设上限：否则一个被改过的文件可以让解密卡到天荒地老
     if (!Number.isInteger(iter) || iter < 10_000 || iter > 10_000_000) {
-      throw new ImportError('malformed', '导出文件的迭代次数不合理');
+      throw new ImportError('malformed', 'unreasonable kdf iterations');
     }
     const kek = await deriveKek(password, salt, iter);
     const data = await openExport<unknown>(kek, file.payload);
@@ -277,24 +280,48 @@ export async function parseImport(text: string, password?: string): Promise<Pars
 
   // 明文文本：可能是我们的导出文件，也可能是从别处复制来的一堆地址
   const drafts: OtpAuthParams[] = [];
-  const issues: string[] = [];
+  const issues: Diagnostic[] = [];
   for (const uri of findOtpauthUris(trimmed)) {
     try {
       drafts.push(parseOtpauth(uri));
     } catch (cause) {
-      // 地址里有密钥，所以报错只说"这一条不行"，不把 URI 贴回来
-      issues.push(cause instanceof Error ? cutSecret(cause.message) : '有一条地址无法解析');
+      // 地址里有密钥，所以只记"哪一项不对"，绝不把 URI 贴回来
+      issues.push(uriProblem(cause));
     }
   }
   if (drafts.length === 0 && issues.length === 0) {
-    throw new ImportError('empty', '这段内容里没有找到 otpauth 地址');
+    throw new ImportError('empty', 'no otpauth uri found');
   }
   return { kind: 'otpauth', drafts, issues, batch: null };
 }
 
-/** 兜底：万一某个错误信息把 URI 带出来了，把 `secret=` 之后抹掉 */
-function cutSecret(message: string): string {
-  return message.replace(/(secret=)[^\s&"']*/gi, '$1***');
+/**
+ * `OtpAuthError` → 诊断。
+ *
+ * 这里不放 URI 原文、也不放 message：一条地址里就有密钥，
+ * 任何"顺手把出错的那行贴回去"的写法都是在把密钥往界面上搬。
+ */
+function uriProblem(cause: unknown): Diagnostic {
+  if (!(cause instanceof OtpAuthError)) {
+    return { code: 'uri-not-otpauth' };
+  }
+  switch (cause.problem) {
+    case 'unsupported-type':
+      return { code: 'uri-unsupported-type', value: cause.value ?? '' };
+    case 'missing-secret':
+      return { code: 'uri-missing-secret' };
+    case 'bad-secret':
+      return { code: 'uri-bad-secret' };
+    case 'bad-algorithm':
+      return { code: 'uri-bad-algorithm', value: cause.value ?? '' };
+    case 'bad-digits':
+      return { code: 'uri-bad-digits', value: cause.value ?? '' };
+    case 'bad-period':
+      return { code: 'uri-bad-period', value: cause.value };
+    case 'not-otpauth':
+    default:
+      return { code: 'uri-not-otpauth' };
+  }
 }
 
 // ---------------------------------------------------------------- 合并计划
@@ -303,12 +330,18 @@ function labelKey(issuer: string, account: string): string {
   return `${issuer.trim().toLowerCase()}\u0000${account.trim().toLowerCase()}`;
 }
 
+/** 新增但要提醒一句的情形 */
+export type ImportNote = 'label-collision';
+
+/** 不新增的原因 */
+export type SkipReason = 'duplicate-in-file' | 'already-exists';
+
 export interface ImportPlan {
   /** 会新增的条目；`note` 非空时界面要标黄提示 */
-  add: Array<{ draft: OtpAuthParams; note: string | null }>;
+  add: Array<{ draft: OtpAuthParams; note: ImportNote | null }>;
   /** 已存在、不会重复添加的条目 */
-  skip: Array<{ draft: OtpAuthParams; reason: string }>;
-  issues: string[];
+  skip: Array<{ draft: OtpAuthParams; reason: SkipReason }>;
+  issues: Diagnostic[];
   batch: MigrationBatch | null;
 }
 
@@ -329,20 +362,20 @@ export function planImport(existing: readonly Account[], parsed: ParsedImport): 
 
   for (const draft of parsed.drafts) {
     if (seenInFile.has(draft.secret)) {
-      skip.push({ draft, reason: '这份文件里重复出现了同一个密钥' });
+      skip.push({ draft, reason: 'duplicate-in-file' });
       continue;
     }
     seenInFile.add(draft.secret);
 
     if (secrets.has(draft.secret)) {
-      skip.push({ draft, reason: '已存在同一个密钥的账户' });
+      skip.push({ draft, reason: 'already-exists' });
       continue;
     }
 
     const collides = labels.has(labelKey(draft.issuer, draft.account));
     add.push({
       draft,
-      note: collides ? '列表里已有同名账户（密钥不同），会作为新的一条加进来' : null,
+      note: collides ? 'label-collision' : null,
     });
   }
 

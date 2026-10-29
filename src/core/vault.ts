@@ -11,8 +11,8 @@ import { base32Decode } from './base32';
  *   （整包拒绝等于用户数据全丢，那是最坏的失败方式）。
  * - 写：结构必须完整，避免把半成品写回存储。
  *
- * 因此 `normalizeVault` 从不抛错，而是把丢掉的东西记进 `issues` 里，
- * 由界面决定要不要告诉用户。
+ * 因此 `normalizeVault` 从不抛错，而是把丢掉的东西记进 `notes` 里 ——
+ * 记的是**原因码**而不是句子：要不要说、说成哪种语言，是界面的事。
  */
 
 export const VAULT_VERSION = 1;
@@ -29,10 +29,29 @@ export class VaultError extends Error {
 
 const ALGORITHMS: readonly Algorithm[] = ['SHA1', 'SHA256', 'SHA512'];
 
+/**
+ * 修复时"丢了什么 / 补了什么"。与 `Diagnostic` 同一个思路：
+ * 数据层只说哪一种，文案表在 `ui/i18n.ts`。
+ */
+export type RepairNote =
+  | { code: 'not-object' }
+  | { code: 'account-not-object'; index: number }
+  | { code: 'account-bad-secret'; index: number; label: string }
+  | { code: 'setting-bad-type'; key: string }
+  | { code: 'migrated'; from: number }
+  | { code: 'duplicate-id' };
+
 export interface NormalizeResult {
   vault: Vault;
-  /** 人类可读的问题清单，空数组表示干干净净 */
-  issues: string[];
+  /** 修复记录，空数组表示干干净净 */
+  notes: RepairNote[];
+}
+
+/** 纯英文调试串，只给控制台和测试看，不进界面 */
+export function debugRepair(note: RepairNote): string {
+  return Object.entries(note)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(' ');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,14 +76,15 @@ function validSecret(secret: string): boolean {
   }
 }
 
-function normalizeAccount(raw: unknown, index: number, issues: string[]): Account | null {
+function normalizeAccount(raw: unknown, index: number, notes: RepairNote[]): Account | null {
   if (!isRecord(raw)) {
-    issues.push(`第 ${index + 1} 个账户不是对象，已跳过`);
+    notes.push({ code: 'account-not-object', index });
     return null;
   }
   const secret = asString(raw.secret).toUpperCase();
   if (!validSecret(secret)) {
-    issues.push(`${asString(raw.issuer) || `第 ${index + 1} 个账户`} 的密钥无法解析，已跳过`);
+    // label 只用来在界面上指认"是哪一条"，可能是空串（连 issuer 都没有）
+    notes.push({ code: 'account-bad-secret', index, label: asString(raw.issuer) });
     return null;
   }
   const algorithm = ALGORITHMS.includes(raw.algorithm as Algorithm)
@@ -99,17 +119,35 @@ function normalizeGroup(raw: unknown, index: number): Group | null {
   };
 }
 
-function normalizeSettings(raw: unknown, issues: string[]): Settings {
+/** 枚举型设置的合法取值表。字符串设置尤其需要，见 normalizeSettings 的注释。 */
+const ENUMS: Partial<Record<keyof Settings, readonly string[]>> = {
+  autoLockMinutes: ['0', '5', '30', '120'],
+  clipboardClearSeconds: ['0', '15', '30', '60'],
+  theme: ['system', 'light', 'dark'],
+  language: ['system', 'zh', 'en'],
+  sortBy: ['manual', 'issuer', 'name'],
+  view: ['normal', 'compact', 'masked'],
+  openMode: ['popup', 'window', 'sidepanel'],
+  popupSize: ['sm', 'md', 'lg'],
+};
+
+function isAllowedValue(key: keyof Settings, value: unknown): boolean {
+  const allowed = ENUMS[key];
+  return !allowed || allowed.includes(String(value));
+}
+
+function normalizeSettings(raw: unknown, notes: RepairNote[]): Settings {
   if (!isRecord(raw)) return { ...DEFAULT_SETTINGS };
   const merged: Settings = { ...DEFAULT_SETTINGS };
   for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof Settings>) {
     const value = raw[key];
     if (value === undefined) continue;
-    // 类型对不上就保留默认值，不让一个坏字段把整个设置区带崩
-    if (typeof value === typeof DEFAULT_SETTINGS[key]) {
+    // 类型对不上就保留默认值，不让一个坏字段把整个设置区带崩。
+    // 枚举字段只比 typeof 不够：'fr' 也是 string，但界面认不出它。
+    if (typeof value === typeof DEFAULT_SETTINGS[key] && isAllowedValue(key, value)) {
       (merged[key] as unknown) = value;
     } else {
-      issues.push(`设置项 ${key} 类型不对，已用默认值`);
+      notes.push({ code: 'setting-bad-type', key });
     }
   }
   return merged;
@@ -122,9 +160,9 @@ function normalizeSettings(raw: unknown, issues: string[]): Settings {
  * 每一步只动必要字段，最后统一走一遍 normalize。
  */
 export function normalizeVault(raw: unknown): NormalizeResult {
-  const issues: string[] = [];
+  const notes: RepairNote[] = [];
   if (!isRecord(raw)) {
-    return { vault: emptyVault(), issues: ['数据不是对象，已按空保险库处理'] };
+    return { vault: emptyVault(), notes: [{ code: 'not-object' }] };
   }
 
   // 没有 version 字段按 v0 处理，不能默认成当前版本 ——
@@ -138,19 +176,19 @@ export function normalizeVault(raw: unknown): NormalizeResult {
   }
   // v0（早期内部格式）没有 version 字段，字段名与 v1 一致，直接按 v1 收敛
   if (version < VAULT_VERSION) {
-    issues.push(`已从旧版本 v${version} 迁移到 v${VAULT_VERSION}`);
+    notes.push({ code: 'migrated', from: version });
   }
 
   const accountsRaw = Array.isArray(raw.accounts) ? raw.accounts : [];
   const accounts: Account[] = [];
   const seenIds = new Set<string>();
   for (const [index, item] of accountsRaw.entries()) {
-    const account = normalizeAccount(item, index, issues);
+    const account = normalizeAccount(item, index, notes);
     if (!account) continue;
     // id 撞车会让 React key 与缓存一起错乱，这里直接换一个新 id
     if (seenIds.has(account.id)) {
       account.id = newId();
-      issues.push('发现重复的账户 id，已重新分配');
+      notes.push({ code: 'duplicate-id' });
     }
     seenIds.add(account.id);
     accounts.push(account);
@@ -168,8 +206,8 @@ export function normalizeVault(raw: unknown): NormalizeResult {
   }
 
   return {
-    vault: { version: VAULT_VERSION, accounts, groups, settings: normalizeSettings(raw.settings, issues) },
-    issues,
+    vault: { version: VAULT_VERSION, accounts, groups, settings: normalizeSettings(raw.settings, notes) },
+    notes,
   };
 }
 
@@ -200,7 +238,7 @@ export interface NewAccountInput {
 
 export function addAccount(vault: Vault, input: NewAccountInput): Vault {
   const secret = input.secret.replace(/[\s-]/g, '').toUpperCase();
-  if (!validSecret(secret)) throw new VaultError('malformed', '密钥不是合法 base32');
+  if (!validSecret(secret)) throw new VaultError('malformed', 'secret is not valid base32');
   const account: Account = {
     id: newId(),
     issuer: input.issuer.trim(),
@@ -229,12 +267,12 @@ export function updateAccount(
     const merged: Account = { ...account, ...patch };
     if (patch.secret !== undefined) {
       const secret = patch.secret.replace(/[\s-]/g, '').toUpperCase();
-      if (!validSecret(secret)) throw new VaultError('malformed', '密钥不是合法 base32');
+      if (!validSecret(secret)) throw new VaultError('malformed', 'secret is not valid base32');
       merged.secret = secret;
     }
     return merged;
   });
-  if (!found) throw new VaultError('malformed', '找不到要修改的账户');
+  if (!found) throw new VaultError('malformed', 'account to update not found');
   return { ...vault, accounts };
 }
 
@@ -256,7 +294,7 @@ export function nextOrder(accounts: readonly Account[]): number {
  */
 export function setPinned(vault: Vault, id: string, pinned: boolean): Vault {
   const target = vault.accounts.find((account) => account.id === id);
-  if (!target) throw new VaultError('malformed', '找不到这个账户');
+  if (!target) throw new VaultError('malformed', 'account not found');
   if (target.pinned === pinned) return vault;
 
   const group = vault.accounts.filter((account) => account.id !== id && account.pinned === pinned);
@@ -281,12 +319,12 @@ function compareOrder(a: Account, b: Account): number {
  */
 export function reorderAccount(vault: Vault, id: string, beforeId: string | null): Vault {
   const moved = vault.accounts.find((account) => account.id === id);
-  if (!moved) throw new VaultError('malformed', '找不到要移动的账户');
+  if (!moved) throw new VaultError('malformed', 'account to move not found');
   if (beforeId === id) return vault;
 
   const rest = vault.accounts.filter((account) => account.id !== id).sort(compareOrder);
   const index = beforeId === null ? rest.length : rest.findIndex((a) => a.id === beforeId);
-  if (beforeId !== null && index < 0) throw new VaultError('malformed', '找不到落点账户');
+  if (beforeId !== null && index < 0) throw new VaultError('malformed', 'target account for reorder not found');
 
   // 落点前后是谁，决定了这一行该进哪个分组
   const prev = rest[index - 1];

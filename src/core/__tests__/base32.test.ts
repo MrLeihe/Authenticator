@@ -51,11 +51,11 @@ describe('base32Decode', () => {
   });
 
   it.each([
-    ['', '密钥为空'],
-    ['   ', '密钥为空'],
-    ['MZXW6YTBO1', '非法字符'],
-    ['MZXW6YTB0I', '非法字符'],
-    ['MZXW6YTB8I', '非法字符'],
+    ['', 'secret is empty'],
+    ['   ', 'secret is empty'],
+    ['MZXW6YTBO1', 'invalid character'],
+    ['MZXW6YTB0I', 'invalid character'],
+    ['MZXW6YTB8I', 'invalid character'],
   ])('拒绝非法输入 %j', (input, msg) => {
     expect(() => base32Decode(input)).toThrow(Base32Error);
     expect(() => base32Decode(input)).toThrow(new RegExp(msg));
@@ -63,7 +63,7 @@ describe('base32Decode', () => {
 
   it('拒绝非法长度（字符数 mod 8 ∈ {1,3,6}）', () => {
     for (const bad of ['A', 'AAA', 'AAAAAA']) {
-      expect(() => base32Decode(bad)).toThrow(/密钥长度非法/);
+      expect(() => base32Decode(bad)).toThrow(/invalid secret length/);
     }
   });
 
@@ -74,8 +74,8 @@ describe('base32Decode', () => {
     // MZ → 01100110|01   残留 01 → 非法
     // MB → 01100000|01   残留 01 → 非法
     expect(() => base32Decode('MY')).not.toThrow();
-    expect(() => base32Decode('MZ')).toThrow(/密钥长度非法/);
-    expect(() => base32Decode('MB')).toThrow(/密钥长度非法/);
+    expect(() => base32Decode('MZ')).toThrow(/invalid secret length/);
+    expect(() => base32Decode('MB')).toThrow(/invalid secret length/);
   });
 });
 

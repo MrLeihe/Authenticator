@@ -45,10 +45,10 @@ export async function hotp(
   algorithm: Algorithm = 'SHA1',
 ): Promise<string> {
   if (key.length === 0) {
-    throw new Error('密钥为空');
+    throw new Error('secret is empty');
   }
   if (!Number.isSafeInteger(counter) || counter < 0) {
-    throw new Error('计数器非法');
+    throw new Error('invalid counter');
   }
 
   const cryptoKey = await crypto.subtle.importKey(
@@ -88,7 +88,7 @@ export async function totp(secret: Uint8Array, opts: TotpOptions = {}): Promise<
   } = opts;
 
   if (!Number.isFinite(period) || period <= 0) {
-    throw new Error('周期非法');
+    throw new Error('invalid period');
   }
 
   const unixSeconds = Math.floor(now / 1000);

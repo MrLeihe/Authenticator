@@ -29,6 +29,8 @@ export interface Settings {
   autoLockMinutes: 0 | 5 | 30 | 120;
   clipboardClearSeconds: ClipboardClear;
   theme: 'system' | 'light' | 'dark';
+  /** `system` 跟随浏览器语言，写盘时收敛成 `zh` / `en` */
+  language: 'system' | 'zh' | 'en';
   sortBy: 'manual' | 'issuer' | 'name';
   view: 'normal' | 'compact' | 'masked';
   showInitials: boolean;
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoLockMinutes: 30,
   clipboardClearSeconds: 30,
   theme: 'system',
+  language: 'system',
   sortBy: 'manual',
   view: 'normal',
   showInitials: true,

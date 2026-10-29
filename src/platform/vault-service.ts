@@ -95,7 +95,7 @@ export async function touchUnlocked(): Promise<void> {
 
 async function decryptVault(dek: Uint8Array): Promise<Vault> {
   const blob = await local.get<SealedBlob>(KEYS.vault);
-  if (!blob) throw new CryptoError('malformed', '找不到保险库密文');
+  if (!blob) throw new CryptoError('malformed', 'vault blob missing');
   const raw = await decryptJson<unknown>(dek, blob);
   return normalizeVault(raw).vault;
 }
@@ -115,7 +115,7 @@ export async function resolveStatus(autoLockMinutes: number): Promise<VaultStatu
   if (wrap.kind === 'none') {
     // 没开密码保护：DEK 就写在 wrap 里，"解锁"是解密本身
     const dek = base64ToBytes(wrap.dek);
-    if (dek.length !== DEK_BYTES) throw new CryptoError('malformed', '明文 DEK 长度不对');
+    if (dek.length !== DEK_BYTES) throw new CryptoError('malformed', 'plaintext dek has bad length');
     cached = { dek };
     return { kind: 'unlocked', vault: await decryptVault(dek), canRecover: false };
   }
@@ -201,7 +201,7 @@ async function applyPassword(
   password: string,
 ): Promise<{ recoveryCode: string }> {
   const check = checkPassword(password);
-  if (!check.ok) throw new CryptoError('malformed', check.issues.join('；'));
+  if (!check.ok) throw new CryptoError('malformed', `weak password: ${check.issues[0]?.code}`);
 
   const salt = randomBytes(SALT_BYTES);
   const kek = await deriveKek(password, salt);
@@ -233,10 +233,10 @@ async function applyPassword(
 
 export async function unlockWithPassword(password: string): Promise<Vault> {
   const { wrap } = await readStatusRaw();
-  if (!wrap) throw new CryptoError('malformed', '还没有保险库');
-  if (wrap.kind === 'none') throw new CryptoError('malformed', '未开启密码保护');
+  if (!wrap) throw new CryptoError('malformed', 'no vault');
+  if (wrap.kind === 'none') throw new CryptoError('malformed', 'password protection is off');
   if (wrap.kind === 'recovery') {
-    throw new CryptoError('malformed', '主包装是恢复码，无法用密码解锁');
+    throw new CryptoError('malformed', 'primary wrap is recovery, cannot unlock with password');
   }
 
   const kek = await deriveKek(password, base64ToBytes(wrap.salt), wrap.iter);
@@ -248,9 +248,9 @@ export async function unlockWithPassword(password: string): Promise<Vault> {
 
 export async function unlockWithRecovery(code: string): Promise<Vault> {
   const { recovery } = await readStatusRaw();
-  if (!recovery) throw new CryptoError('malformed', '没有保存恢复码包装');
+  if (!recovery) throw new CryptoError('malformed', 'recovery wrap missing');
   if (recovery.kind !== 'recovery') {
-    throw new CryptoError('malformed', '恢复码包装的形态不对');
+    throw new CryptoError('malformed', 'recovery wrap has bad shape');
   }
   const kek = await deriveRecoveryKek(normalizeRecoveryCode(code));
   const dek = await unwrapDek({ v: 1, iv: recovery.iv, ct: recovery.ct }, kek);
@@ -282,7 +282,7 @@ export async function changePassword(
 ): Promise<{ recoveryCode: string }> {
   const { wrap } = await readStatusRaw();
   if (!wrap || wrap.kind !== 'password') {
-    throw new CryptoError('malformed', '当前没有开启密码保护');
+    throw new CryptoError('malformed', 'password protection is off');
   }
   const kek = await deriveKek(current, base64ToBytes(wrap.salt), wrap.iter);
   // 密码不对在这一步就会抛 wrong-key，不会走到写盘
@@ -320,7 +320,7 @@ export async function resetPasswordWithRecovery(
 // ---------------------------------------------------------------- 保存与备份
 
 function requireDek(): Uint8Array {
-  if (!cached) throw new CryptoError('wrong-key', '当前未解锁');
+  if (!cached) throw new CryptoError('wrong-key', 'vault not unlocked');
   return cached.dek;
 }
 

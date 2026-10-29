@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { useT } from '../i18n';
 import { EyeIcon, EyeOffIcon } from './Icons';
 
 /**
@@ -28,6 +29,7 @@ export function PasswordInput({
 }) {
   const id = useId();
   const [visible, setVisible] = useState(false);
+  const t = useT();
 
   return (
     <div>
@@ -57,7 +59,7 @@ export function PasswordInput({
           type="button"
           // 眼睛按钮不进 Tab 序列：键盘用户按 Enter 就该提交，不该先撞上一个装饰性按钮
           tabIndex={-1}
-          aria-label={visible ? '隐藏密码' : '显示密码'}
+          aria-label={visible ? t('password.hide') : t('password.show')}
           className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-[6px] p-2 text-fg-muted transition-colors duration-150 hover:text-fg"
           onClick={() => setVisible((v) => !v)}
         >

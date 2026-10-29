@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useT } from '../i18n';
 import { BackIcon } from './Icons';
 
 /**
@@ -16,11 +17,12 @@ export function ScreenHeader({
   onBack: () => void;
   action?: ReactNode;
 }) {
+  const t = useT();
   return (
     <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-separator bg-bg/95 px-3 py-2.5 backdrop-blur">
       <button
         type="button"
-        aria-label="返回"
+        aria-label={t('common.back')}
         className="-ml-1 rounded-[8px] p-1.5 text-fg-muted transition-colors duration-150 hover:bg-surface-alt hover:text-fg"
         onClick={onBack}
       >

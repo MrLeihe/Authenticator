@@ -5,6 +5,9 @@ import { decodeQrFile } from '@/platform/qr';
 import { AccountForm } from '../components/AccountForm';
 import { SecondaryButton } from '../components/Button';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { describeError, useMessage } from '../errors';
+import type { Message } from '../errors';
+import { useT } from '../i18n';
 import { useAppStore } from '../store';
 
 /**
@@ -15,6 +18,7 @@ import { useAppStore } from '../store';
  * 直接落盘等于替用户做了决定。
  */
 export function AddAccountScreen() {
+  const t = useT();
   const closeSheet = useAppStore((s) => s.closeSheet);
   const addAccount = useAppStore((s) => s.addAccount);
   const [mode, setMode] = useState<'manual' | 'scan'>('manual');
@@ -22,18 +26,18 @@ export function AddAccountScreen() {
 
   return (
     <div className="flex min-h-[280px] flex-col bg-bg">
-      <ScreenHeader title={prefill ? '确认账户信息' : '添加账户'} onBack={closeSheet} />
+      <ScreenHeader title={t(prefill ? 'add.title-confirm' : 'add.title')} onBack={closeSheet} />
 
       <div className="flex-1 px-4 py-3">
         {prefill ? (
           <>
             <p className="mb-3 rounded-[8px] bg-warn/10 px-3 py-2 text-[11px] leading-relaxed text-fg">
-              这是从二维码里读出来的内容，确认无误再保存。填错了验证码会一直对不上。
+              {t('add.scan-notice')}
             </p>
             <AccountForm
               key="prefilled"
               initial={prefill}
-              submitLabel="保存账户"
+              submitKey="add.save"
               onSubmit={addAccount}
               onCancel={() => {
                 setPrefill(null);
@@ -45,12 +49,14 @@ export function AddAccountScreen() {
           <>
             <AccountForm
               key="blank"
-              submitLabel="保存账户"
+              submitKey="add.save"
               onSubmit={addAccount}
               onCancel={closeSheet}
             />
             <div className="mt-4 border-t border-separator pt-3">
-              <SecondaryButton onClick={() => setMode('scan')}>改用扫码 / 粘贴二维码</SecondaryButton>
+              <SecondaryButton onClick={() => setMode('scan')}>
+                {t('add.switch-scan')}
+              </SecondaryButton>
             </div>
           </>
         ) : (
@@ -72,9 +78,11 @@ function ScanPane({
   onParsed: (params: OtpAuthParams) => void;
   onManual: () => void;
 }) {
+  const t = useT();
+  const message = useMessage();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const [text, setText] = useState('');
   const [dragging, setDragging] = useState(false);
 
@@ -86,7 +94,7 @@ function ScanPane({
       const content = await decodeQrFile(file);
       onParsed(readContent(content));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '识别失败，换一张图试试');
+      setError(describeError(cause));
     } finally {
       setBusy(false);
     }
@@ -135,16 +143,14 @@ function ScanPane({
           void handleFile(event.dataTransfer.files[0]);
         }}
       >
-        <p className="text-[13px] font-medium">把二维码截图拖进来</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">
-          也可以直接 Ctrl/⌘+V 粘贴，或从文件里选一张
-        </p>
+        <p className="text-[13px] font-medium">{t('add.drop-title')}</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">{t('add.drop-hint')}</p>
         <SecondaryButton
           className="mt-3 w-auto px-4"
           disabled={busy}
           onClick={() => fileInput.current?.click()}
         >
-          {busy ? '识别中…' : '选择图片'}
+          {t(busy ? 'add.reading' : 'add.pick-image')}
         </SecondaryButton>
         <input
           ref={fileInput}
@@ -159,11 +165,15 @@ function ScanPane({
         />
       </div>
 
-      {error && <p className="text-[11px] leading-relaxed text-danger">{error}</p>}
+      {error && (
+        <p role="alert" className="text-[11px] leading-relaxed text-danger">
+          {message(error)}
+        </p>
+      )}
 
       <div className="border-t border-separator pt-3">
         <label htmlFor="otpauth-text" className="mb-1.5 block text-[12px] font-medium text-fg-muted">
-          或者直接粘贴 otpauth 地址
+          {t('add.paste-label')}
         </label>
         <textarea
           id="otpauth-text"
@@ -182,13 +192,13 @@ function ScanPane({
               try {
                 onParsed(readContent(text));
               } catch (cause) {
-                setError(cause instanceof Error ? cause.message : '这段内容不是 otpauth 地址');
+                setError(describeError(cause));
               }
             }}
           >
-            解析
+            {t('add.parse')}
           </SecondaryButton>
-          <SecondaryButton onClick={onManual}>手动输入</SecondaryButton>
+          <SecondaryButton onClick={onManual}>{t('add.manual')}</SecondaryButton>
         </div>
       </div>
     </div>

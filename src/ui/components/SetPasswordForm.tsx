@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { MIN_PASSWORD_LENGTH, checkPassword } from '@/core/crypto';
+import { describePasswordIssue, useErrorText, useMessage } from '../errors';
+import { listSeparator, useLang, useT } from '../i18n';
+import type { MessageKey } from '../i18n';
 import { PasswordInput } from './PasswordInput';
 import { PrimaryButton } from './Button';
-
-function defaultDescribe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : '设置失败，请重试';
-}
 
 /**
  * 设置密码的表单。首次引导和"用恢复码重设密码"共用一份：
@@ -13,22 +12,24 @@ function defaultDescribe(cause: unknown): string {
  */
 export function SetPasswordForm({
   onSubmit,
-  submitLabel = '设置密码',
+  submitKey = 'password.submit-default',
   busy = false,
-  describeError = defaultDescribe,
 }: {
   onSubmit: (password: string) => Promise<void>;
-  submitLabel?: string;
+  submitKey?: MessageKey;
   busy?: boolean;
-  /** 把异常翻译成人话。默认取 message，调用方可换成更具体的说法 */
-  describeError?: (cause: unknown) => string;
 }) {
+  const t = useT();
+  const lang = useLang();
+  const message = useMessage();
+  const errorText = useErrorText();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
   const strength = checkPassword(password);
+  const problems = strength.issues.map((issue) => message(describePasswordIssue(issue)));
   const mismatch = confirm.length > 0 && confirm !== password;
   const disabled = busy || working || !strength.ok || confirm !== password;
 
@@ -39,7 +40,7 @@ export function SetPasswordForm({
     try {
       await onSubmit(password);
     } catch (cause) {
-      setError(describeError(cause));
+      setError(errorText(cause));
     } finally {
       setWorking(false);
     }
@@ -48,33 +49,35 @@ export function SetPasswordForm({
   return (
     <div className="space-y-3">
       <PasswordInput
-        label="密码"
+        label={t('password.title')}
         value={password}
         onChange={setPassword}
         autoComplete="new-password"
         autoFocus
-        hint={`至少 ${MIN_PASSWORD_LENGTH} 位；不需要大小写数字混搭`}
-        error={password.length > 0 && !strength.ok ? strength.issues.join('；') : null}
+        hint={t('password.hint', { min: MIN_PASSWORD_LENGTH })}
+        error={password.length > 0 && !strength.ok ? problems.join(listSeparator(lang)) : null}
         onEnter={() => void submit()}
       />
       <PasswordInput
-        label="再输一次"
+        label={t('password.confirm')}
         value={confirm}
         onChange={setConfirm}
         autoComplete="new-password"
-        error={mismatch ? '两次输入不一致' : null}
+        error={mismatch ? t('password.mismatch') : null}
         onEnter={() => void submit()}
       />
 
-      {error && <p className="text-[11px] leading-relaxed text-danger">{error}</p>}
+      {error && (
+        <p role="alert" className="text-[11px] leading-relaxed text-danger">
+          {error}
+        </p>
+      )}
 
       <PrimaryButton disabled={disabled} onClick={() => void submit()}>
-        {working ? '处理中…' : submitLabel}
+        {working ? t('common.busy') : t(submitKey)}
       </PrimaryButton>
 
-      <p className="text-[11px] leading-relaxed text-fg-muted">
-        密码只用来在本机解锁，不会被上传，也没有人能帮你重置。
-      </p>
+      <p className="text-[11px] leading-relaxed text-fg-muted">{t('password.note')}</p>
     </div>
   );
 }

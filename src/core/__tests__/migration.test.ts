@@ -144,14 +144,15 @@ describe('迁移码 · 必须跳过的条目', () => {
     });
     const result = parseMigrationUri(uri);
     expect(result?.accounts).toHaveLength(1);
-    expect(result?.issues[0]).toContain('HOTP');
+    // 断言原因码而不是句子：句子是界面的事，数据层只报"哪一条、为什么"
+    expect(result?.issues[0]).toEqual({ code: 'migration-hotp', index: 0, label: 'counter' });
   });
 
   it('MD5 跳过', () => {
     const uri = migrationUri({ items: [otpParams({ secret: RFC_SECRET, name: 'md5', algorithm: 4 })] });
     const result = parseMigrationUri(uri);
     expect(result?.accounts).toHaveLength(0);
-    expect(result?.issues[0]).toContain('MD5');
+    expect(result?.issues[0]).toEqual({ code: 'migration-md5', index: 0, label: 'md5' });
   });
 
   it('一条都没有密钥时报错，而不是返回一个空列表', () => {
@@ -167,7 +168,12 @@ describe('迁移码 · 失败路径', () => {
   });
 
   it('没有 data 参数 → malformed', () => {
-    expect(() => parseMigrationUri('otpauth-migration://offline')).toThrow(/没有数据/);
+    expect(() => parseMigrationUri('otpauth-migration://offline')).toThrow(MigrationError);
+    try {
+      parseMigrationUri('otpauth-migration://offline');
+    } catch (error) {
+      expect((error as MigrationError).reason).toBe('malformed');
+    }
   });
 
   it('data 不是 base64 → malformed', () => {

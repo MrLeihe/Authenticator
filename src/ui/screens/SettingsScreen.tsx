@@ -6,6 +6,8 @@ import { Button, TextButton } from '../components/Button';
 import { PasswordInput } from '../components/PasswordInput';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Segmented } from '../components/TextInput';
+import { describeError, useMessage } from '../errors';
+import { useT } from '../i18n';
 import { useAppStore, useSettings } from '../store';
 
 /**
@@ -15,6 +17,7 @@ import { useAppStore, useSettings } from '../store';
  * 设置本身就是数据的一部分（存在加密的 vault 里），改一项写一次。
  */
 export function SettingsScreen() {
+  const t = useT();
   const closeSheet = useAppStore((s) => s.closeSheet);
   const openSheet = useAppStore((s) => s.openSheet);
   const canRecover = useAppStore((s) => s.canRecover);
@@ -23,123 +26,128 @@ export function SettingsScreen() {
   const showToast = useAppStore((s) => s.showToast);
 
   const update = (patch: Partial<Settings>) => {
-    void setSettings(patch).catch((cause: unknown) => {
-      showToast(cause instanceof Error ? cause.message : '保存设置失败', 'danger');
+    void setSettings(patch).catch(() => {
+      showToast('toast.settings-failed', { tone: 'danger' });
     });
   };
 
   return (
     <div className="flex min-h-[280px] flex-col bg-bg pb-4">
-      <ScreenHeader title="设置" onBack={closeSheet} />
+      <ScreenHeader title={t('settings.title')} onBack={closeSheet} />
 
       <div className="space-y-5 px-4 py-4">
-        <Section title="显示">
+        <Section title={t('settings.section.display')}>
           <Segmented
-            label="验证码显示方式"
+            label={t('settings.view')}
             value={settings.view}
             onChange={(view) => update({ view })}
             options={[
-              { value: 'normal' as const, label: '正常' },
-              { value: 'compact' as const, label: '紧凑' },
-              { value: 'masked' as const, label: '隐藏' },
+              { value: 'normal' as const, label: t('view.normal') },
+              { value: 'compact' as const, label: t('view.compact') },
+              { value: 'masked' as const, label: t('view.masked') },
             ]}
           />
           <Toggle
-            label="显示账户首字母图标"
-            hint="关掉之后列表更素净，宽度也更省"
+            label={t('settings.initials')}
+            hint={t('settings.initials.hint')}
             checked={settings.showInitials}
             onChange={(showInitials) => update({ showInitials })}
           />
           <Segmented
-            label="主题"
+            label={t('settings.theme')}
             value={settings.theme}
             onChange={(theme) => update({ theme })}
             options={[
-              { value: 'system' as const, label: '跟随系统' },
-              { value: 'light' as const, label: '浅色' },
-              { value: 'dark' as const, label: '深色' },
+              { value: 'system' as const, label: t('theme.system') },
+              { value: 'light' as const, label: t('theme.light') },
+              { value: 'dark' as const, label: t('theme.dark') },
+            ]}
+          />
+          {/* 语言放在「显示」里而不是单开一块：它和主题一样属于"界面长什么样"，
+              而且和主题一样改了立刻生效、不需要重开弹窗 */}
+          <Segmented
+            label={t('settings.language')}
+            value={settings.language}
+            onChange={(language) => update({ language })}
+            options={[
+              { value: 'system' as const, label: t('language.system') },
+              { value: 'zh' as const, label: t('language.zh') },
+              { value: 'en' as const, label: t('language.en') },
             ]}
           />
         </Section>
 
-        <Section title="排序">
+        <Section title={t('settings.section.sort')}>
           <Segmented
-            label="列表顺序"
+            label={t('settings.sort')}
             value={settings.sortBy}
             onChange={(sortBy) => update({ sortBy })}
             options={[
-              { value: 'manual' as const, label: '手动' },
-              { value: 'issuer' as const, label: '按网站' },
-              { value: 'name' as const, label: '按账户' },
+              { value: 'manual' as const, label: t('sort.manual') },
+              { value: 'issuer' as const, label: t('sort.issuer') },
+              { value: 'name' as const, label: t('sort.name') },
             ]}
           />
-          <p className="text-[11px] leading-relaxed text-fg-muted">
-            只有「手动」能拖动排序。置顶的账户始终排在最前面。
-          </p>
+          <p className="text-[11px] leading-relaxed text-fg-muted">{t('settings.sort.hint')}</p>
         </Section>
 
-        <Section title="安全">
+        <Section title={t('settings.section.security')}>
           <Segmented
-            label="多久没操作自动上锁"
+            label={t('settings.autolock')}
             value={settings.autoLockMinutes}
             onChange={(autoLockMinutes) => update({ autoLockMinutes })}
             options={[
-              { value: 0 as const, label: '不锁' },
-              { value: 5 as const, label: '5 分钟' },
-              { value: 30 as const, label: '30 分钟' },
-              { value: 120 as const, label: '2 小时' },
+              { value: 0 as const, label: t('autolock.0') },
+              { value: 5 as const, label: t('autolock.5') },
+              { value: 30 as const, label: t('autolock.30') },
+              { value: 120 as const, label: t('autolock.120') },
             ]}
           />
           <PasswordSection enabled={canRecover} />
         </Section>
 
-        <Section title="剪贴板">
+        <Section title={t('settings.section.clipboard')}>
           <Segmented
-            label="复制验证码后自动清空"
+            label={t('settings.clipboard')}
             value={settings.clipboardClearSeconds}
             onChange={(clipboardClearSeconds) => update({ clipboardClearSeconds })}
             options={[
-              { value: 0 as ClipboardClear, label: '不清空' },
-              { value: 15 as ClipboardClear, label: '15 秒' },
-              { value: 30 as ClipboardClear, label: '30 秒' },
-              { value: 60 as ClipboardClear, label: '60 秒' },
+              { value: 0 as ClipboardClear, label: t('clipboard.0') },
+              { value: 15 as ClipboardClear, label: t('clipboard.15') },
+              { value: 30 as ClipboardClear, label: t('clipboard.30') },
+              { value: 60 as ClipboardClear, label: t('clipboard.60') },
             ]}
           />
           <p className="text-[11px] leading-relaxed text-fg-muted">
-            验证码在剪贴板里待得越久，越可能被别的程序读到。
+            {t('settings.clipboard.hint')}
           </p>
         </Section>
 
-        <Section title="备份">
+        <Section title={t('settings.section.backup')}>
           <Toggle
-            label="每天自动备份一份"
-            hint="当天第一次改动时留一份快照，保留最近 7 份，只存在本机"
+            label={t('settings.autobackup')}
+            hint={t('settings.autobackup.hint')}
             checked={settings.autoBackup}
             onChange={(autoBackup) => update({ autoBackup })}
           />
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => openSheet({ kind: 'export', from: 'settings' })}>
-              导出账户
+              {t('settings.export')}
             </Button>
             <Button variant="secondary" onClick={() => openSheet({ kind: 'import', from: 'settings' })}>
-              导入账户
+              {t('settings.import')}
             </Button>
           </div>
-          <p className="text-[11px] leading-relaxed text-fg-muted">
-            导出的文件可以搬到另一台电脑，或者重装扩展之后再用。
-            导入只往里加：同一个密钥的账户会跳过，已有的永远不会被覆盖。
-          </p>
+          <p className="text-[11px] leading-relaxed text-fg-muted">{t('settings.backup.hint')}</p>
         </Section>
 
-        <Section title="关于">
+        <Section title={t('settings.section.about')}>
           <dl className="space-y-1.5 text-[12px]">
-            <Row label="版本" value={getExtensionVersion()} />
-            <Row label="数据存放" value="仅本机，加密存储" />
-            <Row label="网络请求" value="无" />
+            <Row label={t('settings.version')} value={getExtensionVersion()} />
+            <Row label={t('settings.storage')} value={t('settings.storage.value')} />
+            <Row label={t('settings.network')} value={t('settings.network.value')} />
           </dl>
-          <p className="text-[11px] leading-relaxed text-fg-muted">
-            没有账号、没有云端、没有任何统计。验证码全部在本机算出来。
-          </p>
+          <p className="text-[11px] leading-relaxed text-fg-muted">{t('settings.about.hint')}</p>
         </Section>
       </div>
     </div>
@@ -193,6 +201,8 @@ function Toggle({
 
 /** 密码保护：开启 / 修改 / 关闭。三种状态互斥，用同一个面板切换。 */
 function PasswordSection({ enabled }: { enabled: boolean }) {
+  const t = useT();
+  const message = useMessage();
   const setPassword = useAppStore((s) => s.setPassword);
   const changePassword = useAppStore((s) => s.changePassword);
   const clearPassword = useAppStore((s) => s.clearPassword);
@@ -215,7 +225,7 @@ function PasswordSection({ enabled }: { enabled: boolean }) {
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
     if (next !== confirm) {
-      setError('两次输入的新密码不一致');
+      setError(t('settings.password-mismatch'));
       return;
     }
     setBusy(true);
@@ -223,7 +233,7 @@ function PasswordSection({ enabled }: { enabled: boolean }) {
       await action();
       reset();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '操作失败，请重试');
+      setError(message(describeError(cause)));
       setBusy(false);
     }
   };
@@ -232,27 +242,27 @@ function PasswordSection({ enabled }: { enabled: boolean }) {
     return (
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[12px] text-fg-muted">密码保护</span>
+          <span className="text-[12px] text-fg-muted">{t('settings.password')}</span>
           <span className={`text-[12px] ${enabled ? 'text-fg' : 'text-fg-muted'}`}>
-            {enabled ? '已开启' : '未开启'}
+            {enabled ? t('settings.password.on') : t('settings.password.off')}
           </span>
         </div>
         {enabled ? (
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setMode('change')}>
-              修改密码
+              {t('settings.password.change')}
             </Button>
             <Button variant="secondary" onClick={() => setMode('disable')}>
-              关闭密码
+              {t('settings.password.disable')}
             </Button>
           </div>
         ) : (
           <>
             <Button variant="secondary" onClick={() => setMode('set')}>
-              设置密码
+              {t('settings.password.set')}
             </Button>
             <p className="text-[11px] leading-relaxed text-fg-muted">
-              现在数据已经加密存放，只是打开时不再问密码。设了密码，别人拿到这台电脑也看不到验证码。
+              {t('settings.password.off-hint')}
             </p>
           </>
         )}
@@ -264,7 +274,7 @@ function PasswordSection({ enabled }: { enabled: boolean }) {
     <div className="space-y-2.5 rounded-[10px] bg-surface-alt/60 p-3">
       {mode !== 'set' && (
         <PasswordInput
-          label="当前密码"
+          label={t('settings.current-password')}
           value={current}
           onChange={setCurrent}
           autoFocus
@@ -274,15 +284,15 @@ function PasswordSection({ enabled }: { enabled: boolean }) {
       {mode !== 'disable' && (
         <>
           <PasswordInput
-            label="新密码"
+            label={t('settings.new-password')}
             value={next}
             onChange={setNext}
             autoComplete="new-password"
-            {...(mode === 'set' ? { hint: '至少 8 位，建议用一句话而不是一个词' } : {})}
+            {...(mode === 'set' ? { hint: t('password.hint-long') } : {})}
             disabled={busy}
           />
           <PasswordInput
-            label="再输一次"
+            label={t('password.confirm')}
             value={confirm}
             onChange={setConfirm}
             autoComplete="new-password"
@@ -303,16 +313,22 @@ function PasswordSection({ enabled }: { enabled: boolean }) {
             else void run(() => clearPassword(current));
           }}
         >
-          {busy ? '处理中…' : mode === 'set' ? '设好，继续' : mode === 'change' ? '修改密码' : '关闭密码保护'}
+          {busy
+            ? t('common.busy')
+            : mode === 'set'
+              ? t('settings.password-submit')
+              : mode === 'change'
+                ? t('settings.password.change')
+                : t('settings.disable-submit')}
         </Button>
         <TextButton className="w-full" onClick={reset} disabled={busy}>
-          取消
+          {t('common.cancel')}
         </TextButton>
       </div>
 
       {mode === 'disable' && (
         <p className="text-[11px] leading-relaxed text-fg-muted">
-          关闭后数据仍然加密存放，但打开扩展时不再需要密码，恢复码也会一并作废。
+          {t('settings.password.disable-hint')}
         </p>
       )}
     </div>

@@ -206,9 +206,9 @@ describe('恢复码解锁', () => {
 
   it('未开密码保护时没有恢复码包装，明确指出', async () => {
     await initializeVault();
-    await expect(unlockWithRecovery('AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-GGGG-HHHH')).rejects.toThrow(
-      /恢复码/,
-    );
+    await expect(
+      unlockWithRecovery('AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-GGGG-HHHH'),
+    ).rejects.toMatchObject({ reason: 'malformed' });
   });
 });
 
@@ -235,7 +235,7 @@ describe('开关密码保护', () => {
 
   it('密码太短时不写入任何包装，保险库仍是原来的状态', async () => {
     await initializeVault();
-    await expect(enablePassword('short')).rejects.toThrow(/至少/);
+    await expect(enablePassword('short')).rejects.toMatchObject({ reason: 'malformed' });
     expect((await local.get<DekWrap>(KEYS.dekWrap))?.kind).toBe('none');
     // 失败不该把当前会话弄丢
     expect(isUnlocked()).toBe(true);
@@ -313,7 +313,9 @@ describe('changePassword · 拿旧密码直接换新的', () => {
 
   it('没有密码保护时没有可换的东西', async () => {
     await initializeVault();
-    await expect(changePassword(PASSWORD, OTHER_PASSWORD)).rejects.toThrow(/没有开启密码保护/);
+    await expect(changePassword(PASSWORD, OTHER_PASSWORD)).rejects.toMatchObject({
+      reason: 'malformed',
+    });
   });
 });
 
@@ -405,6 +407,6 @@ describe('明文 DEK 包装的健壮性', () => {
       kind: 'none',
       dek: bytesToBase64(randomBytes(8)),
     } satisfies DekWrap);
-    await expect(resolveStatus(0)).rejects.toThrow(/长度/);
+    await expect(resolveStatus(0)).rejects.toMatchObject({ reason: 'malformed' });
   });
 });

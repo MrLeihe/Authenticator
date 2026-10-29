@@ -28,11 +28,11 @@ export function base32Decode(input: string): Uint8Array {
   const clean = normalizeBase32(input);
 
   if (clean.length === 0) {
-    throw new Base32Error('密钥为空');
+    throw new Base32Error('secret is empty');
   }
 
   if (!VALID_REMAINDERS.has(clean.length % 8)) {
-    throw new Base32Error('密钥长度非法');
+    throw new Base32Error('invalid secret length');
   }
 
   const out: number[] = [];
@@ -42,7 +42,8 @@ export function base32Decode(input: string): Uint8Array {
   for (const ch of clean) {
     const idx = ALPHABET.indexOf(ch);
     if (idx === -1) {
-      throw new Base32Error(`密钥包含非法字符：${ch}`);
+      // 故意不带出那个字符：它属于用户的密钥，一个字符都不该进报错、日志或截图
+      throw new Base32Error('invalid character in secret');
     }
 
     value = (value << 5) | idx;
@@ -59,7 +60,7 @@ export function base32Decode(input: string): Uint8Array {
 
   // 剩余位必须全 0，否则说明输入被截断过
   if (value !== 0) {
-    throw new Base32Error('密钥长度非法');
+    throw new Base32Error('invalid secret length');
   }
 
   return Uint8Array.from(out);

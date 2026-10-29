@@ -37,16 +37,16 @@ describe('normalizeVault · 宽容读取', () => {
       groups: [{ id: 'g1', name: '工作', order: 1024 }],
       settings: { ...DEFAULT_SETTINGS, view: 'compact' },
     };
-    const { vault, issues } = normalizeVault(input);
-    expect(issues).toEqual([]);
+    const { vault, notes } = normalizeVault(input);
+    expect(notes).toEqual([]);
     expect(vault.accounts).toHaveLength(1);
     expect(vault.accounts[0]?.algorithm).toBe('SHA256');
     expect(vault.accounts[0]?.digits).toBe(8);
     expect(vault.settings.view).toBe('compact');
   });
 
-  it('坏账户跳过，好账户照常救回来，并说明跳了几个', () => {
-    const { vault, issues } = normalizeVault({
+  it('坏账户跳过，好账户照常救回来，并记下跳了哪几个', () => {
+    const { vault, notes } = normalizeVault({
       version: 1,
       accounts: [
         { id: 'ok', issuer: '好的', secret: SECRET },
@@ -56,8 +56,12 @@ describe('normalizeVault · 宽容读取', () => {
       ],
     });
     expect(vault.accounts.map((a) => a.id)).toEqual(['ok']);
-    expect(issues).toHaveLength(3);
-    expect(issues.join()).toContain('坏的');
+    // 两条读不出来（密钥坏 / 根本不是对象）+ 一条压根没有密钥
+    expect(notes).toEqual([
+      { code: 'account-bad-secret', index: 1, label: '坏的' },
+      { code: 'account-bad-secret', index: 2, label: '空的' },
+      { code: 'account-not-object', index: 3 },
+    ]);
   });
 
   it('字段类型不对就用默认值，不整包失败', () => {
@@ -73,7 +77,7 @@ describe('normalizeVault · 宽容读取', () => {
   });
 
   it('重复 id 会被重新分配（否则列表 key 与缓存会打架）', () => {
-    const { vault, issues } = normalizeVault({
+    const { vault, notes } = normalizeVault({
       version: 1,
       accounts: [
         { id: 'dup', secret: SECRET },
@@ -82,7 +86,7 @@ describe('normalizeVault · 宽容读取', () => {
     });
     const ids = vault.accounts.map((a) => a.id);
     expect(new Set(ids).size).toBe(2);
-    expect(issues.join()).toContain('重复');
+    expect(notes).toContainEqual({ code: 'duplicate-id' });
   });
 
   it('groupId 指向不存在的分组时清空', () => {
@@ -96,7 +100,7 @@ describe('normalizeVault · 宽容读取', () => {
 
   it('不是对象时返回空保险库而不是抛错', () => {
     expect(normalizeVault(null).vault.accounts).toEqual([]);
-    expect(normalizeVault('字符串').issues).toHaveLength(1);
+    expect(normalizeVault('字符串').notes).toEqual([{ code: 'not-object' }]);
   });
 
   it('版本比我们新 → 明确拒绝，不试图解析', () => {
@@ -117,10 +121,10 @@ describe('normalizeVault · 宽容读取', () => {
   });
 
   it('迁移骨架：没有 version 的老数据按 v1 收敛并留痕', () => {
-    const { vault, issues } = normalizeVault({ accounts: [{ secret: SECRET }] });
+    const { vault, notes } = normalizeVault({ accounts: [{ secret: SECRET }] });
     expect(vault.version).toBe(1);
     expect(vault.accounts).toHaveLength(1);
-    expect(issues.join()).toContain('迁移');
+    expect(notes).toContainEqual({ code: 'migrated', from: 0 });
   });
 });
 

@@ -6,6 +6,8 @@ import { AccountRow } from '../components/AccountRow';
 import { PlusIcon, SearchIcon, SettingsIcon } from '../components/Icons';
 import { Toast } from '../components/Toast';
 import { useTick } from '../hooks/useTick';
+import { useLang, useT } from '../i18n';
+import type { MessageKey } from '../i18n';
 import {
   filterAccounts,
   sortAccounts,
@@ -15,13 +17,15 @@ import {
   type ViewMode,
 } from '../store';
 
-const VIEWS: Array<{ value: ViewMode; label: string }> = [
-  { value: 'normal', label: '正常' },
-  { value: 'compact', label: '紧凑' },
-  { value: 'masked', label: '隐藏' },
+const VIEWS: Array<{ value: ViewMode; label: MessageKey }> = [
+  { value: 'normal', label: 'view.normal' },
+  { value: 'compact', label: 'view.compact' },
+  { value: 'masked', label: 'view.masked' },
 ];
 
 export function ListScreen() {
+  const t = useT();
+  const lang = useLang();
   const accounts = useAccounts();
   const settings = useSettings();
   const query = useAppStore((s) => s.query);
@@ -44,8 +48,8 @@ export function ListScreen() {
   const [codes, setCodes] = useState<Map<string, CachedCode>>(new Map());
 
   const visible = useMemo(
-    () => filterAccounts(sortAccounts(accounts, settings.sortBy), query),
-    [accounts, settings.sortBy, query],
+    () => filterAccounts(sortAccounts(accounts, settings.sortBy, lang), query),
+    [accounts, settings.sortBy, lang, query],
   );
 
   // 每次 tick 只让缓存重算翻页的那几个账户，其余直接命中
@@ -75,8 +79,10 @@ export function ListScreen() {
     // 拖回原位不算改动，别白写一次盘
     if (beforeId === id || visible[from + 1]?.id === beforeId) return;
 
-    void reorderAccount(id, beforeId).catch((cause: unknown) => {
-      showToast(cause instanceof Error ? cause.message : '排序没保存上', 'danger');
+    // 落盘失败的具体原因（配额、权限）对用户没用，能做的只有"再拖一次"；
+    // 与其把底层报错摊出来，不如直说这次顺序没存上
+    void reorderAccount(id, beforeId).catch(() => {
+      showToast('toast.reorder-failed', { tone: 'danger' });
     });
   };
 
@@ -90,10 +96,14 @@ export function ListScreen() {
     <div className="flex min-h-[280px] flex-col bg-bg">
       <header className="sticky top-0 z-10 bg-bg/95 px-4 pb-2 pt-3 backdrop-blur">
         <div className="flex items-center gap-2">
-          <h1 className="text-[18px] font-semibold tracking-tight">验证码</h1>
+          <h1 className="text-[18px] font-semibold tracking-tight">{t('app.name')}</h1>
 
           <div className="ml-auto flex items-center gap-1.5">
-            <div className="flex rounded-[8px] bg-surface-alt p-0.5" role="group" aria-label="显示方式">
+            <div
+              className="flex rounded-[8px] bg-surface-alt p-0.5"
+              role="group"
+              aria-label={t('list.view-group')}
+            >
               {VIEWS.map((v) => (
                 <button
                   key={v.value}
@@ -106,14 +116,14 @@ export function ListScreen() {
                   }`}
                   onClick={() => setView(v.value)}
                 >
-                  {v.label}
+                  {t(v.label)}
                 </button>
               ))}
             </div>
 
             <button
               type="button"
-              aria-label="设置"
+              aria-label={t('settings.title')}
               className="rounded-[8px] p-1.5 text-fg-muted transition-colors duration-150 hover:bg-surface-alt hover:text-fg"
               onClick={() => openSheet({ kind: 'settings' })}
             >
@@ -131,7 +141,7 @@ export function ListScreen() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索账户"
+            placeholder={t('list.search')}
             className="h-[38px] w-full rounded-[8px] bg-surface-alt pl-8 pr-3 text-[13px] text-fg outline-none placeholder:text-fg-muted focus:ring-2 focus:ring-accent/40"
           />
         </div>
@@ -191,7 +201,7 @@ export function ListScreen() {
           onClick={() => openSheet({ kind: 'add' })}
         >
           <PlusIcon size={15} />
-          添加账户
+          {t('list.add')}
         </button>
       </footer>
 
@@ -202,18 +212,17 @@ export function ListScreen() {
 
 /** 空态：必须说清"为什么会这样 + 下一步点哪"，不能只留一片白 */
 function EmptyState({ searching }: { searching: boolean }) {
+  const t = useT();
   return (
     <div className="flex flex-col items-center justify-center px-8 py-14 text-center">
       <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-surface-alt">
         <SearchIcon size={22} className="text-fg-muted" />
       </div>
       <p className="text-[14px] font-medium">
-        {searching ? '没有匹配的账户' : '还没有添加任何账户'}
+        {searching ? t('list.no-match.title') : t('list.empty.title')}
       </p>
       <p className="mt-1 text-[12px] leading-relaxed text-fg-muted">
-        {searching
-          ? '换个关键词试试，或者清空搜索框看全部账户'
-          : '点下面的「添加账户」，扫码或手动输入密钥都能加进来'}
+        {searching ? t('list.no-match.body') : t('list.empty.body')}
       </p>
     </div>
   );

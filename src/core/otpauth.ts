@@ -33,11 +33,15 @@ export type OtpAuthProblem =
   | 'bad-period';
 
 export class OtpAuthError extends Error {
+  /**
+   * `value` 只放**出错的那个参数本身**（算法名、位数、周期），
+   * 供界面拼一句具体的话；密钥永远不会进来，所以这个对象可以安全地打日志。
+   */
   constructor(
     readonly problem: OtpAuthProblem,
-    message: string,
+    readonly value: string | null = null,
   ) {
-    super(message);
+    super(value === null ? problem : `${problem}: ${value}`);
     this.name = 'OtpAuthError';
   }
 }
@@ -103,12 +107,12 @@ export { splitLabel as splitOtpauthLabel };
 export function parseOtpauth(input: string): OtpAuthParams {
   const uri = input.trim();
   if (uri.length > MAX_URI_LENGTH) {
-    throw new OtpAuthError('not-otpauth', '内容太长，不像是一条 otpauth 地址');
+    throw new OtpAuthError('not-otpauth');
   }
   // 协议名大小写不敏感（`OTPAUTH://` 真的出现过），但除此之外必须是它
   const schemeMatch = /^otpauth:\/\//i.exec(uri);
   if (!schemeMatch) {
-    throw new OtpAuthError('not-otpauth', '这不是一条 otpauth 地址');
+    throw new OtpAuthError('not-otpauth');
   }
 
   const rest = uri.slice(schemeMatch[0].length);
@@ -121,12 +125,7 @@ export function parseOtpauth(input: string): OtpAuthParams {
   const rawLabel = slash < 0 ? '' : head.slice(slash + 1);
   if (type !== 'totp') {
     // HOTP 是计数器式的，没有时间概念，硬按 TOTP 算出来的码永远是错的
-    throw new OtpAuthError(
-      'unsupported-type',
-      type === 'hotp'
-        ? '这是 HOTP（计数器）二维码，本扩展只支持基于时间的 TOTP'
-        : `不认识的验证码类型「${type || '(空)'}」`,
-    );
+    throw new OtpAuthError('unsupported-type', type);
   }
 
   const params = splitQuery(query);
@@ -140,27 +139,27 @@ export function parseOtpauth(input: string): OtpAuthParams {
 
   const rawSecret = params.get('secret');
   if (!rawSecret) {
-    throw new OtpAuthError('missing-secret', '这条地址里没有密钥（secret）');
+    throw new OtpAuthError('missing-secret');
   }
   // 密钥里允许出现空格和连字符（有人手工分组写成 4 位一组），一起去掉
   const secret = rawSecret.replace(/[\s-]/g, '').toUpperCase();
   try {
     if (base32Decode(secret).length === 0) throw new Error('empty');
   } catch {
-    // 报错信息里绝不回显密钥本身：这类消息会被日志、截图、错误上报带走
-    throw new OtpAuthError('bad-secret', '密钥不是合法的 base32，请核对后重新输入');
+    // 错误对象里绝不带上密钥本身：这类对象会被日志、截图、错误上报带走
+    throw new OtpAuthError('bad-secret');
   }
 
   const rawAlgorithm = (params.get('algorithm') ?? '').trim().toUpperCase();
   const algorithm = rawAlgorithm ? ALGORITHMS[rawAlgorithm] : 'SHA1';
   if (!algorithm) {
-    throw new OtpAuthError('bad-algorithm', `不支持的算法「${rawAlgorithm}」，只能是 SHA1 / SHA256 / SHA512`);
+    throw new OtpAuthError('bad-algorithm', rawAlgorithm);
   }
 
   const rawDigits = (params.get('digits') ?? '').trim();
   const digits = rawDigits === '' ? 6 : rawDigits === '6' ? 6 : rawDigits === '8' ? 8 : null;
   if (digits === null) {
-    throw new OtpAuthError('bad-digits', `不支持的位数「${rawDigits}」，只能是 6 或 8`);
+    throw new OtpAuthError('bad-digits', rawDigits);
   }
 
   const rawPeriod = (params.get('period') ?? '').trim();
@@ -168,11 +167,11 @@ export function parseOtpauth(input: string): OtpAuthParams {
   if (rawPeriod !== '') {
     // 只接受纯数字：`30s`、`30.0` 这类要么是别人写错，要么是我们没想到的方言
     if (!/^\d+$/.test(rawPeriod)) {
-      throw new OtpAuthError('bad-period', `周期「${rawPeriod}」不是秒数`);
+      throw new OtpAuthError('bad-period', rawPeriod);
     }
     period = Number(rawPeriod);
     if (period < 1 || period > 3600) {
-      throw new OtpAuthError('bad-period', '周期必须在 1 到 3600 秒之间');
+      throw new OtpAuthError('bad-period', rawPeriod);
     }
   }
 

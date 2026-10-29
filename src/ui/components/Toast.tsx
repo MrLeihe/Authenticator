@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useT } from '../i18n';
 import { useAppStore } from '../store';
 
 const DURATION = 1800;
@@ -7,6 +8,7 @@ const DURATION = 1800;
 export function Toast() {
   const toast = useAppStore((s) => s.toast);
   const dismiss = useAppStore((s) => s.dismissToast);
+  const t = useT();
 
   useEffect(() => {
     if (!toast) return;
@@ -29,7 +31,7 @@ export function Toast() {
             : 'bg-fg/90 text-bg'
         }`}
       >
-        {toast.text}
+        {t(toast.message, toast.vars)}
       </div>
     </div>
   );
