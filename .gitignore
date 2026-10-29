@@ -30,3 +30,6 @@ Thumbs.db
 *.crx
 *.zip
 *.crdownload
+
+# 生成商店截图时的中间产物（原始弹窗截图），不入库
+scripts/shots/raw/

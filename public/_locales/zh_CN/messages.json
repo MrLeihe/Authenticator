@@ -1,10 +1,10 @@
 {
   "extName": {
-    "message": "验证码",
-    "description": "扩展在 Chrome 中显示的名称。上架前会替换为正式品牌名。"
+    "message": "Sixring - 两步验证器",
+    "description": "扩展在 Chrome 中显示的名称，也是商店列表标题。"
   },
   "extDesc": {
-    "message": "本地生成两步验证（TOTP）验证码。不联网、不上传、免费无内购。",
-    "description": "扩展描述，商店列表与 chrome://extensions 共用。"
+    "message": "在本地生成两步验证（TOTP）验证码。不联网、无账号、无内购。",
+    "description": "商店列表与 chrome://extensions 共用的一句话描述。"
   }
 }

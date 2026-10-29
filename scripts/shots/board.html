@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sixring 商店素材</title>
+    <!--
+      商店截图的排版稿。
+
+      这里刻意按**成品的一半**来排版（截图 640×400、宣传图 220×140）：浏览器截图是
+      2 倍密度，所以最终 PNG 正好是商店要的 1280×800 与 440×280，不需要任何缩放。
+      原始弹窗截图在 scripts/shots/raw/，也是 2 倍密度，缩到一半显示依然是视网膜清晰度。
+    -->
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { background: #080d18; }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        color: #fff;
+      }
+
+      .shot {
+        position: relative;
+        width: 640px;
+        height: 400px;
+        overflow: hidden;
+        background:
+          radial-gradient(120% 90% at 74% 46%, rgba(47, 107, 255, 0.22) 0%, rgba(47, 107, 255, 0) 62%),
+          linear-gradient(158deg, #0a1120 0%, #101a30 58%, #0a1120 100%);
+      }
+
+      /* 背景里极细的网格：给"工具"的质感，又不会抢内容 */
+      .shot::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+        background-size: 32px 32px;
+        mask-image: radial-gradient(88% 82% at 50% 50%, #000 30%, transparent 78%);
+      }
+
+      .brand {
+        position: absolute;
+        left: 32px;
+        top: 28px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .brand img { width: 18px; height: 18px; border-radius: 5px; }
+      .brand span {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: #dbe4f5;
+      }
+
+      .copy {
+        position: absolute;
+        left: 32px;
+        top: 50%;
+        transform: translateY(-42%);
+        width: 232px;
+      }
+      .eyebrow {
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #6f8ec9;
+      }
+      .copy h1 {
+        margin-top: 9px;
+        font-size: 21px;
+        line-height: 1.32;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #fff;
+      }
+      .copy p {
+        margin-top: 9px;
+        font-size: 10.5px;
+        line-height: 1.7;
+        color: #93a4c2;
+      }
+      .copy ul {
+        margin-top: 12px;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .copy li {
+        position: relative;
+        padding-left: 11px;
+        font-size: 10px;
+        line-height: 1.55;
+        color: #b7c5de;
+      }
+      .copy li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 5.5px;
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: #4d8bff;
+      }
+
+      /* 弹窗：裁掉右侧那 100px 的空白，只留 400px 的真实宽度 */
+      .frame {
+        position: absolute;
+        left: 372px;
+        width: 200px;
+        overflow: hidden;
+        border-radius: 7px;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.1),
+          0 18px 44px -12px rgba(0, 0, 0, 0.75),
+          0 4px 12px rgba(0, 0, 0, 0.35);
+      }
+      .frame img { display: block; width: 250px; }
+
+      /* 宣传小图 440×280：这里按 220×140 排，2 倍密度出图。
+         商店只认 440×280 这一档，比例 1.571 —— 别拿 920×680 顶替 */
+      .promo {
+        position: relative;
+        width: 220px;
+        height: 140px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0;
+        background:
+          radial-gradient(90% 80% at 50% 34%, rgba(47, 107, 255, 0.3) 0%, rgba(47, 107, 255, 0) 66%),
+          linear-gradient(160deg, #0a1120 0%, #101a30 60%, #080d18 100%);
+      }
+      .promo .mark { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 6px 14px -4px rgba(0, 0, 0, 0.8); }
+      .promo h1 { margin-top: 7px; font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+      .promo p { margin-top: 3px; font-size: 7px; color: #93a4c2; letter-spacing: 0.01em; }
+      .promo .chips { display: flex; gap: 3px; margin-top: 7px; }
+      .promo .chips span {
+        font-size: 5.5px;
+        line-height: 1;
+        color: #c7d4ea;
+        padding: 2px 4px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        background: rgba(255, 255, 255, 0.04);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module">
+      const SHOTS = {
+        '1': {
+          file: '1-list',
+          height: 300,
+          eyebrow: 'Account list',
+          title: '一屏看完所有验证码',
+          body: '点一下就复制，环形倒计时告诉你还剩几秒。搜索、置顶、拖拽排序都在列表上。',
+          bullets: ['正常 / 紧凑 / 隐藏 三档视图', '密钥从不出现在列表里', '明暗主题跟随系统'],
+        },
+        '2': {
+          file: '2-dark',
+          height: 300,
+          eyebrow: 'Dark mode',
+          title: '暗色不是简单反色',
+          body: '背景、卡片、分隔线与强调色各自取过值，黑底上验证码依然一眼可读。',
+          bullets: ['跟随系统，切了立刻生效', '不用重开弹窗', '颜色全部来自 CSS 变量'],
+        },
+        '3': {
+          file: '3-scan',
+          height: 202,
+          eyebrow: 'Add by screenshot',
+          // 左栏只有 232px 宽，21px 字号一行最多九个汉字；
+          // 多一个字就会把最后的"来"甩到第二行，看起来像排版出错
+          title: '贴张截图就能加进来',
+          body: '也可以直接粘贴 otpauth 地址或手动输入。识别结果先进表单，确认了才保存。',
+          bullets: ['图片在本地解码，不申请摄像头', '不联网、不上传图片', '识别失败会说清是哪一步'],
+        },
+        '4': {
+          file: '4-onboard',
+          height: 202,
+          eyebrow: 'Local & encrypted',
+          title: '密钥只加密存在本地',
+          body: '不同步、不上传，也没有服务器能看到你的密钥。密码可以不设，设了就有恢复码兜底。',
+          bullets: ['AES-256-GCM，密钥始终密文落盘', '忘记密码可用恢复码找回', '每天自动留一份加密备份'],
+        },
+      };
+
+      const params = new URLSearchParams(location.search);
+      const stage = document.getElementById('stage');
+
+      if (params.get('board') === 'promo') {
+        stage.innerHTML = `
+          <div class="promo">
+            <img class="mark" src="/icons/128.png" alt="" />
+            <h1>Sixring</h1>
+            <p>两步验证器 · 本地生成，不联网</p>
+            <div class="chips">
+              <span>无账号</span><span>无内购</span><span>可选加密</span>
+            </div>
+          </div>`;
+      } else {
+        const shot = SHOTS[params.get('shot') ?? '1'];
+        const { height: cardHeight } = shot;
+        stage.innerHTML = `
+          <div class="shot">
+            <div class="brand">
+              <img src="/icons/128.png" alt="" />
+              <span>Sixring</span>
+            </div>
+            <div class="copy">
+              <div class="eyebrow">${shot.eyebrow}</div>
+              <h1>${shot.title}</h1>
+              <p>${shot.body}</p>
+              <ul>${shot.bullets.map((b) => `<li>${b}</li>`).join('')}</ul>
+            </div>
+            <div class="frame" style="height:${cardHeight}px;top:${(400 - cardHeight) / 2}px">
+              <img src="/scripts/shots/raw/${shot.file}.png" alt="" />
+            </div>
+          </div>`;
+      }
+    </script>
+  </body>
+</html>

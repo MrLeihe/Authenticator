@@ -15,7 +15,7 @@ export default defineManifest({
   manifest_version: 3,
   name: '__MSG_extName__',
   description: '__MSG_extDesc__',
-  version: '0.1.0',
+  version: '1.0.0',
   default_locale: 'zh_CN',
   minimum_chrome_version: '112', // storage.session.setAccessLevel 需要 112+
 

@@ -1,10 +1,10 @@
 {
   "extName": {
-    "message": "Authenticator",
-    "description": "Extension name shown in Chrome. Replaced with the final brand before release."
+    "message": "Sixring - TOTP Authenticator",
+    "description": "Extension name shown in Chrome and in the store listing title."
   },
   "extDesc": {
-    "message": "Local-only two-factor (TOTP) code generator. No network, no upload, free with no in-app purchases.",
-    "description": "Extension description used by the store listing and chrome://extensions."
+    "message": "Generates two-factor (TOTP) codes locally. No network, no accounts, no in-app purchases.",
+    "description": "Short description used by the store listing and chrome://extensions."
   }
 }
