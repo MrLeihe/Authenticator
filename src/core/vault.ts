@@ -27,6 +27,17 @@ export class VaultError extends Error {
   }
 }
 
+/**
+ * 判重身份：同一个服务上的同一个账号，换个 id 也还是同一条。
+ * trim + 小写，避免「Google」和「google」被当成两条；分隔符用 `\0`，
+ * 因为 issuer/account 里不会出现它。
+ *
+ * 导入、备份恢复、回收站恢复三处都按这个口径判重，别再各写一遍。
+ */
+export function accountIdentity(issuer: string, account: string): string {
+  return `${issuer.trim().toLowerCase()}\u0000${account.trim().toLowerCase()}`;
+}
+
 const ALGORITHMS: readonly Algorithm[] = ['SHA1', 'SHA256', 'SHA512'];
 
 /**
@@ -174,7 +185,7 @@ export function normalizeVault(raw: unknown): NormalizeResult {
   if (version > VAULT_VERSION) {
     throw new VaultError(
       'unsupported-version',
-      `保险库版本 ${version} 高于本扩展支持的 ${VAULT_VERSION}，请升级扩展后再打开`,
+      `vault version ${version} is newer than supported ${VAULT_VERSION}`,
     );
   }
   // v0（早期内部格式）没有 version 字段，字段名与 v1 一致，直接按 v1 收敛

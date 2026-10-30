@@ -5,6 +5,7 @@ import type { OtpAuthParams } from '@/core/otpauth';
 import type { Account, Settings, Vault } from '@/core/types';
 import { DEFAULT_SETTINGS } from '@/core/types';
 import {
+  accountIdentity,
   addAccount as addAccountToVault,
   expireTrash,
   purgeTrashed,
@@ -181,7 +182,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sheet: null,
 
   hydrate: async () => {
-    const status = await resolveStatus(DEFAULT_SETTINGS.autoLockMinutes);
+    const status = await resolveStatus();
     if (status.kind === 'empty') {
       // 首次启动：直接建一个免密的库。加密照常（DEK 存在 session 区），
       // 只是不包密码 —— 用户想要锁，去设置里开，那里本来就有完整的三态面板
@@ -254,7 +255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 
   lockNow: async () => {
-    await lockVault('manual');
+    await lockVault();
     set({ phase: 'locked', vault: null, canRecover: get().canRecover, notice: null, sheet: null });
   },
 
@@ -337,11 +338,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const target = current.trash.find((account) => account.id === id);
     if (!target) return false;
     // 同名冲突：恢复回去会和列表里某条撞名（密钥不同）。不拦，只上报给界面提示。
-    // 口径与 backup.ts 的 labelKey 一致：trim + 小写
+    const targetIdentity = accountIdentity(target.issuer, target.account);
     const collides = current.accounts.some(
-      (account) =>
-        account.issuer.trim().toLowerCase() === target.issuer.trim().toLowerCase() &&
-        account.account.trim().toLowerCase() === target.account.trim().toLowerCase(),
+      (account) => accountIdentity(account.issuer, account.account) === targetIdentity,
     );
     await get().mutate((vault) => restoreTrashedInVault(vault, id));
     // 不关页：最近删除里常有多条要连续恢复，关掉会打断操作。留在原地，
@@ -399,7 +398,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   changePassword: async (current, next) => {
     const { recoveryCode } = await changePasswordInVault(current, next);
-    await lockVault('manual');
+    await lockVault();
     set({
       phase: 'locked',
       vault: null,

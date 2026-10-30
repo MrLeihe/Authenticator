@@ -43,7 +43,7 @@ beforeEach(async () => {
 
 describe('冷启动状态机', () => {
   it('什么都没存过 → empty', async () => {
-    expect(await resolveStatus(0)).toEqual({ kind: 'empty' });
+    expect(await resolveStatus()).toEqual({ kind: 'empty' });
   });
 
   it('未开密码保护 → 直接 unlocked，DEK 只从 wrap 里取', async () => {
@@ -54,7 +54,7 @@ describe('冷启动状态机', () => {
     await lock();
     expect(isUnlocked()).toBe(false);
 
-    const status = await resolveStatus(0);
+    const status = await resolveStatus();
     expect(status.kind).toBe('unlocked');
     expect(status.kind === 'unlocked' && status.vault.accounts).toEqual([]);
     expect(isUnlocked()).toBe(true);
@@ -66,7 +66,7 @@ describe('冷启动状态机', () => {
     // 设完密码立刻清会话，强制马上验证一次
     expect(isUnlocked()).toBe(false);
 
-    expect(await resolveStatus(0)).toEqual({ kind: 'locked', canRecover: true });
+    expect(await resolveStatus()).toEqual({ kind: 'locked', canRecover: true });
   });
 
   it('会话里的 DEK 解不开当前 vault 时，不炸，退回 locked', async () => {
@@ -75,14 +75,14 @@ describe('冷启动状态机', () => {
     await session.set(KEYS.dek, bytesToBase64(randomBytes(DEK_BYTES)));
     await session.set(KEYS.unlockedAt, Date.now());
 
-    expect(await resolveStatus(0)).toEqual({ kind: 'locked', canRecover: true });
+    expect(await resolveStatus()).toEqual({ kind: 'locked', canRecover: true });
     expect(isUnlocked()).toBe(false);
   });
 
   it('会话里的 DEK 长度不对时当作没有', async () => {
     await initializeVault(PASSWORD);
     await session.set(KEYS.dek, bytesToBase64(randomBytes(16)));
-    expect(await resolveStatus(0)).toEqual({ kind: 'locked', canRecover: true });
+    expect(await resolveStatus()).toEqual({ kind: 'locked', canRecover: true });
   });
 
   it('超过自动锁时限 → locked，并把会话清掉', async () => {
@@ -90,17 +90,28 @@ describe('冷启动状态机', () => {
     const vault = await unlockWithPassword(PASSWORD);
     expect(vault.version).toBe(1);
 
-    // 伪造成 10 分钟前解锁的
+    // 用户把自动锁设成 5 分钟；伪造成 10 分钟前解锁的
+    await saveVault({ ...vault, settings: { ...vault.settings, autoLockMinutes: 5 } });
     await session.set(KEYS.unlockedAt, Date.now() - 10 * 60_000);
-    expect(await resolveStatus(5)).toEqual({ kind: 'locked', canRecover: true });
+    expect(await resolveStatus()).toEqual({ kind: 'locked', canRecover: true });
     expect(await session.get(KEYS.dek)).toBeUndefined();
   });
 
   it('关闭自动锁时，多老的会话都还算解锁', async () => {
     await initializeVault(PASSWORD);
-    await unlockWithPassword(PASSWORD);
+    const vault = await unlockWithPassword(PASSWORD);
+    await saveVault({ ...vault, settings: { ...vault.settings, autoLockMinutes: 0 } });
     await session.set(KEYS.unlockedAt, Date.now() - 999 * 60_000);
-    expect((await resolveStatus(0)).kind).toBe('unlocked');
+    expect((await resolveStatus()).kind).toBe('unlocked');
+  });
+
+  it('按保险库里的设置判断：120 分钟时 35 分钟前的会话仍然有效', async () => {
+    await initializeVault(PASSWORD);
+    const vault = await unlockWithPassword(PASSWORD);
+    // 默认设置是 30 分钟；这里验证冷启动读的是存下来的 120，而不是默认值
+    await saveVault({ ...vault, settings: { ...vault.settings, autoLockMinutes: 120 } });
+    await session.set(KEYS.unlockedAt, Date.now() - 35 * 60_000);
+    expect((await resolveStatus()).kind).toBe('unlocked');
   });
 });
 
@@ -218,13 +229,13 @@ describe('恢复码解锁', () => {
 describe('开关密码保护', () => {
   it('开后立刻上锁，用新密码能进；关闭后退回明文包装并删掉恢复码', async () => {
     await initializeVault();
-    expect(await resolveStatus(0)).toMatchObject({ kind: 'unlocked' });
+    expect(await resolveStatus()).toMatchObject({ kind: 'unlocked' });
 
     const { recoveryCode } = await enablePassword(PASSWORD);
     expect(recoveryCode).toMatch(/^([A-Z2-7]{4}-){7}[A-Z2-7]{4}$/);
     expect(isUnlocked()).toBe(false);
 
-    expect(await resolveStatus(0)).toEqual({ kind: 'locked', canRecover: true });
+    expect(await resolveStatus()).toEqual({ kind: 'locked', canRecover: true });
     await unlockWithPassword(PASSWORD);
     expect(isUnlocked()).toBe(true);
 
@@ -233,7 +244,7 @@ describe('开关密码保护', () => {
     expect(isUnlocked()).toBe(true);
     expect((await local.get<DekWrap>(KEYS.dekWrap))?.kind).toBe('none');
     expect(await local.get(KEYS.dekWrapRecovery)).toBeUndefined();
-    expect(await resolveStatus(0)).toMatchObject({ kind: 'unlocked' });
+    expect(await resolveStatus()).toMatchObject({ kind: 'unlocked' });
   });
 
   it('密码太短时不写入任何包装，保险库仍是原来的状态', async () => {
@@ -288,7 +299,7 @@ describe('changePassword · 拿旧密码直接换新的', () => {
     await unlockWithPassword(OTHER_PASSWORD);
     expect(isUnlocked()).toBe(true);
 
-    const status = await resolveStatus(0);
+    const status = await resolveStatus();
     expect(status.kind).toBe('unlocked');
     if (status.kind === 'unlocked') {
       expect(status.vault.accounts[0]?.issuer).toBe('示例');
@@ -333,7 +344,7 @@ describe('保存与持久化', () => {
     await saveVault(vault);
 
     await lock();
-    const status = await resolveStatus(0);
+    const status = await resolveStatus();
     expect(status.kind).toBe('unlocked');
     if (status.kind === 'unlocked') {
       expect(status.vault.accounts).toHaveLength(1);
@@ -461,7 +472,7 @@ describe('resetAll', () => {
 
     await resetAll();
     expect(isUnlocked()).toBe(false);
-    expect(await resolveStatus(0)).toEqual({ kind: 'empty' });
+    expect(await resolveStatus()).toEqual({ kind: 'empty' });
     expect((await local.keys()).filter((key) => key.startsWith('2fa:'))).toHaveLength(0);
   });
 });
@@ -475,6 +486,6 @@ describe('明文 DEK 包装的健壮性', () => {
       kind: 'none',
       dek: bytesToBase64(randomBytes(8)),
     } satisfies DekWrap);
-    await expect(resolveStatus(0)).rejects.toMatchObject({ reason: 'malformed' });
+    await expect(resolveStatus()).rejects.toMatchObject({ reason: 'malformed' });
   });
 });

@@ -18,6 +18,7 @@ import type { MigrationBatch } from './migration';
 import { OtpAuthError, buildOtpauth, findOtpauthUris, parseOtpauth } from './otpauth';
 import type { OtpAuthParams } from './otpauth';
 import type { Account, Algorithm } from './types';
+import { accountIdentity } from './vault';
 import type { NewAccountInput } from './vault';
 
 /**
@@ -326,10 +327,6 @@ function uriProblem(cause: unknown): Diagnostic {
 
 // ---------------------------------------------------------------- 合并计划
 
-function labelKey(issuer: string, account: string): string {
-  return `${issuer.trim().toLowerCase()}\u0000${account.trim().toLowerCase()}`;
-}
-
 /** 新增但要提醒一句的情形 */
 export type ImportNote = 'label-collision';
 
@@ -354,7 +351,7 @@ export interface ImportPlan {
  */
 export function planImport(existing: readonly Account[], parsed: ParsedImport): ImportPlan {
   const secrets = new Set(existing.map((account) => account.secret));
-  const labels = new Set(existing.map((account) => labelKey(account.issuer, account.account)));
+  const labels = new Set(existing.map((account) => accountIdentity(account.issuer, account.account)));
 
   const add: ImportPlan['add'] = [];
   const skip: ImportPlan['skip'] = [];
@@ -372,7 +369,7 @@ export function planImport(existing: readonly Account[], parsed: ParsedImport): 
       continue;
     }
 
-    const collides = labels.has(labelKey(draft.issuer, draft.account));
+    const collides = labels.has(accountIdentity(draft.issuer, draft.account));
     add.push({
       draft,
       note: collides ? 'label-collision' : null,

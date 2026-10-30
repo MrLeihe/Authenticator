@@ -3,6 +3,7 @@ import { ImportError } from '@/core/backup';
 import type { ImportNote, SkipReason } from '@/core/backup';
 import { CryptoError } from '@/core/crypto';
 import type { PasswordIssue } from '@/core/crypto';
+import { VaultError } from '@/core/vault';
 import type { Diagnostic } from '@/core/diagnostics';
 import { MigrationError } from '@/core/migration';
 import { OtpAuthError } from '@/core/otpauth';
@@ -52,6 +53,12 @@ const FALLBACK: Message = { key: 'error.unknown' };
 
 export function describeError(cause: unknown, scene: ErrorScene = 'general'): Message {
   if (cause instanceof UiError) return { key: cause.key };
+
+  if (cause instanceof VaultError) {
+    return {
+      key: cause.reason === 'unsupported-version' ? 'error.vault-version' : 'error.data-malformed',
+    };
+  }
 
   if (cause instanceof CryptoError) {
     switch (cause.reason) {

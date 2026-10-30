@@ -18,8 +18,8 @@ import {
   wrapDek,
 } from '@/core/crypto';
 import type { DekWrap, SealedBlob } from '@/core/crypto';
-import type { Account, Vault } from '@/core/types';
-import { VAULT_VERSION, emptyVault, normalizeVault } from '@/core/vault';
+import type { Vault } from '@/core/types';
+import { VAULT_VERSION, accountIdentity, emptyVault, normalizeVault } from '@/core/vault';
 import { KEYS, backupKey, local, session } from './storage';
 
 /**
@@ -46,8 +46,6 @@ export type VaultStatus =
   | { kind: 'locked'; canRecover: boolean }
   /** `canRecover` 只在开了密码保护时为真：没开密码时恢复码包装是被删掉的 */
   | { kind: 'unlocked'; vault: Vault; canRecover: boolean };
-
-export type LockReason = 'manual' | 'timeout' | 'password-change' | 'reload';
 
 /** 解锁后的 DEK 与解密结果只活在内存里 */
 let cached: { dek: Uint8Array } | null = null;
@@ -105,10 +103,12 @@ async function decryptVault(dek: Uint8Array): Promise<Vault> {
 /**
  * 判断当前该进哪一屏。
  *
- * `autoLockMinutes === 0` 表示关闭自动锁：会话 DEK 一直有效，
+ * 要不要自动锁、锁多久，由保险库自己的 `settings.autoLockMinutes` 决定。
+ * 这个值存在加密的 vault 里，所以必须先解密才读得到 —— 调用方不可能在
+ * 解密前知道用户设置。`0` 表示关闭自动锁：会话 DEK 一直有效，
  * 直到浏览器关闭（storage.session 随之清空）。
  */
-export async function resolveStatus(autoLockMinutes: number): Promise<VaultStatus> {
+export async function resolveStatus(): Promise<VaultStatus> {
   const { wrap, recovery } = await readStatusRaw();
   if (!wrap) return { kind: 'empty' };
 
@@ -121,17 +121,17 @@ export async function resolveStatus(autoLockMinutes: number): Promise<VaultStatu
   }
 
   const sessionDek = await readSessionDek();
-  const unlockedAt = await session.get<number>(KEYS.unlockedAt);
-  if (sessionDek && !expired(autoLockMinutes, unlockedAt)) {
+  if (sessionDek) {
     try {
       const vault = await decryptVault(sessionDek);
-      cached = { dek: sessionDek };
-      return { kind: 'unlocked', vault, canRecover: recovery !== null };
+      const unlockedAt = await session.get<number>(KEYS.unlockedAt);
+      if (!expired(vault.settings.autoLockMinutes, unlockedAt)) {
+        cached = { dek: sessionDek };
+        return { kind: 'unlocked', vault, canRecover: recovery !== null };
+      }
     } catch {
       // 会话里的 DEK 解不开（存储被改过 / vault 换了）：当作未解锁，让用户重新输密码
-      await forgetDek();
     }
-  } else if (sessionDek) {
     await forgetDek();
   }
 
@@ -151,7 +151,7 @@ export async function autoLockIfExpired(autoLockMinutes: number): Promise<boolea
   if (wrap?.kind === 'none') return false;
   const unlockedAt = await session.get<number>(KEYS.unlockedAt);
   if (!expired(autoLockMinutes, unlockedAt)) return false;
-  await lock('timeout');
+  await lock();
   return true;
 }
 
@@ -168,18 +168,27 @@ export interface InitResult {
   recoveryCode: string | null;
 }
 
-/** 第一次打开扩展：建 DEK、建空保险库。给了密码就顺手开启加密。 */
-export async function initializeVault(password?: string): Promise<InitResult> {
-  const dek = generateDek();
-  const vault = emptyVault();
-  await local.set(KEYS.vault, await encryptJson(dek, vault));
-
+/**
+ * 安装时写一次元信息。
+ *
+ * 后台只调用这个函数，不自己碰 `chrome.storage` —— 存储键和结构只属于
+ * platform 层，后台不该知道 `2fa:meta` 长什么样。
+ */
+export async function initializeMeta(): Promise<void> {
   const meta: VaultMeta = {
     createdAt: Date.now(),
     lastBackupDate: null,
     schemaVersion: VAULT_VERSION,
   };
   await local.set(KEYS.meta, meta);
+}
+
+/** 第一次打开扩展：建 DEK、建空保险库。给了密码就顺手开启加密。 */
+export async function initializeVault(password?: string): Promise<InitResult> {
+  const dek = generateDek();
+  const vault = emptyVault();
+  await local.set(KEYS.vault, await encryptJson(dek, vault));
+  await initializeMeta();
 
   if (password) {
     const result = await applyPassword(dek, password);
@@ -329,7 +338,7 @@ export async function saveVault(vault: Vault): Promise<void> {
   await local.set(KEYS.vault, await encryptJson(dek, vault));
 }
 
-export async function lock(_reason: LockReason = 'manual'): Promise<void> {
+export async function lock(): Promise<void> {
   await forgetDek();
 }
 
@@ -359,12 +368,6 @@ async function readSnapshot(key: string): Promise<Vault | null> {
     return null;
   }
 }
-
-/** 判重身份：同一个服务上的同一个账号，换个 id 也还是同一条。
- *  口径与 `backup.ts` 的 `labelKey` 保持一致：trim + 小写，避免「Google」和
- *  「google」被当成两条。分隔符用 `\0`，因为 issuer/account 里不会出现它。 */
-const identityOf = (account: Account): string =>
-  `${account.issuer.trim().toLowerCase()}\u0000${account.account.trim().toLowerCase()}`;
 
 export interface BackupSnapshot {
   /** `YYYY-MM-DD` */
@@ -434,12 +437,18 @@ export async function restoreLatestBackup(): Promise<{
     const backup = await readSnapshot(key);
     if (!backup || backup.accounts.length === 0) continue;
 
-    const seen = new Set(current.accounts.map(identityOf));
+    const seen = new Set(
+      current.accounts.map((account) => accountIdentity(account.issuer, account.account)),
+    );
     // 软删的账户还在「最近删除」里，不算真丢 —— 把它们也纳入判重，
     // 否则从备份恢复会把躺在回收站的账户又补回列表，造成同一密钥
     // 同时出现在列表和回收站里，违背软删除的不变量
-    for (const trashed of current.trash) seen.add(identityOf(trashed));
-    const missing = backup.accounts.filter((account) => !seen.has(identityOf(account)));
+    for (const trashed of current.trash) {
+      seen.add(accountIdentity(trashed.issuer, trashed.account));
+    }
+    const missing = backup.accounts.filter(
+      (account) => !seen.has(accountIdentity(account.issuer, account.account)),
+    );
     if (missing.length === 0) continue;
 
     const next: Vault = { ...current, accounts: [...current.accounts, ...missing] };
