@@ -9,11 +9,14 @@ import {
   expired,
   initializeVault,
   isUnlocked,
+  latestBackup,
   lock,
   maybeBackup,
   resetAll,
   resolveStatus,
+  restoreLatestBackup,
   saveVault,
+  today,
   unlockWithPassword,
   unlockWithRecovery,
   changePassword,
@@ -382,6 +385,71 @@ describe('每日备份', () => {
     await lock();
     expect(await maybeBackup(emptyVault())).toBe(false);
     expect((await local.keys()).filter((key) => key.startsWith('2fa:backup:'))).toHaveLength(0);
+  });
+});
+
+describe('备份恢复', () => {
+  const withOne = () =>
+    addAccount(emptyVault(), { issuer: 'GitHub', account: 'me', secret: 'JBSWY3DPEHPK3PXP' });
+
+  it('没有备份时什么都不说', async () => {
+    await initializeVault();
+    expect(await latestBackup()).toBeNull();
+    expect(await restoreLatestBackup()).toBeNull();
+  });
+
+  it('空态下报出最近一份里有多少账户', async () => {
+    await initializeVault();
+    const filled = withOne();
+    await saveVault(filled);
+    await maybeBackup(filled);
+    // 用户把账户删光了，列表空了，但快照还在
+    await saveVault(emptyVault());
+
+    const snapshot = await latestBackup();
+    expect(snapshot).toEqual({ date: today(), accounts: 1 });
+  });
+
+  it('恢复只做加法：把缺的补回来，已有的一条都不动', async () => {
+    await initializeVault();
+    const filled = withOne();
+    await saveVault(filled);
+    await maybeBackup(filled);
+    await saveVault(emptyVault());
+
+    const restored = await restoreLatestBackup();
+    expect(restored?.added).toBe(1);
+    expect(restored?.vault.accounts).toHaveLength(1);
+    expect(restored?.vault.accounts[0]?.issuer).toBe('GitHub');
+
+    // 已经补回来了，再点一次不该长出第二条
+    expect(await restoreLatestBackup()).toBeNull();
+  });
+
+  it('同一个服务上的同一个账号即使换了 id 也不重复添加', async () => {
+    await initializeVault();
+    const filled = withOne();
+    await saveVault(filled);
+    await maybeBackup(filled);
+
+    // 模拟"账户还在，但 id 已经变了"（删掉又新建过一次）
+    const renamed = {
+      ...filled,
+      accounts: filled.accounts.map((account) => ({ ...account, id: 'another-id' })),
+    };
+    await saveVault(renamed);
+
+    expect(await restoreLatestBackup()).toBeNull();
+  });
+
+  it('上锁之后读不到备份（没有密钥可解）', async () => {
+    await initializeVault();
+    await saveVault(withOne());
+    await maybeBackup(withOne());
+    await lock();
+
+    expect(await latestBackup()).toBeNull();
+    expect(await restoreLatestBackup()).toBeNull();
   });
 });
 

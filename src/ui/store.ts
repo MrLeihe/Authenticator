@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { parseOtpauth } from '@/core/otpauth';
 import type { OtpAuthParams } from '@/core/otpauth';
@@ -5,8 +6,11 @@ import type { Account, Settings, Vault } from '@/core/types';
 import { DEFAULT_SETTINGS } from '@/core/types';
 import {
   addAccount as addAccountToVault,
+  expireTrash,
+  purgeTrashed,
   removeAccount as removeAccountFromVault,
   reorderAccount as reorderInVault,
+  restoreTrashed as restoreTrashedInVault,
   setPinned as setPinnedInVault,
   updateAccount as updateAccountInVault,
 } from '@/core/vault';
@@ -19,6 +23,7 @@ import {
   maybeBackup,
   resetPasswordWithRecovery,
   resolveStatus,
+  restoreLatestBackup,
   saveVault,
   touchUnlocked,
   unlockWithPassword as unlockVaultWithPassword,
@@ -30,8 +35,14 @@ import type { MessageKey, Vars } from './i18n';
 
 export type ViewMode = 'normal' | 'compact';
 
-/** 顶层路由只看这一个状态 */
-export type Phase = 'loading' | 'empty' | 'locked' | 'unlocked';
+/**
+ * 顶层路由只看这一个状态。
+ *
+ * 没有 `empty`（"还没建库"）：首次启动时 `hydrate` 直接建一个免密的库并落到
+ * `unlocked`，用户打开扩展看到的就是列表（空列表有自己的引导）。少一屏
+ * "先设个密码"的拦截，也少一个"建库失败卡在中间态"的入口。
+ */
+export type Phase = 'loading' | 'locked' | 'unlocked';
 
 /**
  * 覆盖在列表之上的那些界面。
@@ -40,13 +51,24 @@ export type Phase = 'loading' | 'empty' | 'locked' | 'unlocked';
  * 内容高就会被裁掉且无法滚动（P3 恢复码页踩过这个坑）。
  */
 export type Sheet =
-  | { kind: 'add' }
+  /** `mode` 决定进去先落在哪一栏：从空态的三张卡进来时已经知道用户手上是什么 */
+  | { kind: 'add'; mode?: 'manual' | 'scan'; autoscan?: boolean }
+  | { kind: 'guide'; guide: GuideId }
   | { kind: 'edit'; id: string }
   | { kind: 'delete'; id: string }
+  | { kind: 'trash' }
   | { kind: 'settings' }
   // 导出入是从设置里进来的：返回时回到设置，而不是直接掉回列表
   | { kind: 'export'; from?: 'settings' }
-  | { kind: 'import'; from?: 'settings' };
+  /**
+   * `text` 是"已经拿到内容、只差让用户确认"的情况：扫码或粘贴到一份
+   * Google Authenticator 迁移码时，这里带着原文跳过来，直接进预览 ——
+   * 让用户重新把同一张图选一遍，等于否认他刚才做的那一步。
+   */
+  | { kind: 'import'; from?: 'settings'; text?: string };
+
+/** 空态那几张卡片点进去的说明页。三页共用一套模板，见 `GuideScreen` */
+export type GuideId = 'setup' | 'phone' | 'secret' | 'rescue';
 
 /** 表单最终要落成的一次写入；新增和编辑只差一个 id */
 export type AccountDraft = OtpAuthParams;
@@ -90,8 +112,6 @@ interface AppState {
   sheet: Sheet | null;
 
   hydrate: () => Promise<void>;
-  /** 首次创建；给了密码返回恢复码（需立刻展示一次） */
-  createVault: (password?: string) => Promise<string | null>;
   unlockWithPassword: (password: string) => Promise<void>;
   /** 用恢复码进来并当场换掉密码，返回新恢复码 */
   recoverWithCode: (code: string, newPassword: string) => Promise<string>;
@@ -119,6 +139,10 @@ interface AppState {
   addAccountFromUri: (uri: string, known?: OtpAuthParams) => Promise<void>;
   saveAccount: (id: string, draft: AccountDraft) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
+  /** 从「最近删除」恢复一条账户，返回是否发生了同名冲突 */
+  restoreTrashed: (id: string) => Promise<boolean>;
+  /** 从「最近删除」彻底删除一条 */
+  purgeTrashed: (id: string) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   /** 拖拽排序：插到 `beforeId` 之前，null 表示末尾 */
   reorderAccount: (id: string, beforeId: string | null) => Promise<void>;
@@ -126,6 +150,11 @@ interface AppState {
   changePassword: (current: string, next: string) => Promise<string>;
   /** 导入：只做加法，返回真正新增的条数 */
   importAccounts: (drafts: readonly OtpAuthParams[]) => Promise<number>;
+  /**
+   * 从最近一份本机快照恢复，返回补回来的条数。
+   * 0 表示备份里没有当前列表缺的账户 —— 这不是错误，只是没什么可做的
+   */
+  restoreBackup: () => Promise<number>;
 
   setQuery: (query: string) => void;
   setView: (view: ViewMode) => void;
@@ -154,35 +183,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   hydrate: async () => {
     const status = await resolveStatus(DEFAULT_SETTINGS.autoLockMinutes);
     if (status.kind === 'empty') {
-      set({ phase: 'empty', vault: null, canRecover: false });
+      // 首次启动：直接建一个免密的库。加密照常（DEK 存在 session 区），
+      // 只是不包密码 —— 用户想要锁，去设置里开，那里本来就有完整的三态面板
+      const { vault } = await initializeVault();
+      set({
+        phase: 'unlocked',
+        vault: await maybeSeedDemo(vault),
+        canRecover: false,
+        notice: null,
+      });
       return;
     }
     if (status.kind === 'locked') {
       set({ phase: 'locked', vault: null, canRecover: status.canRecover });
       return;
     }
+    // 冷启动时顺手清理「最近删除」里过期的账户。惰性清理：不依赖后台定时器，
+    // 只在这一下检查。清理通常无事发生，只有真删了才多写一次盘。
+    const vault = expireTrash(status.vault);
+    if (vault !== status.vault) await saveVault(vault);
     set({
       phase: 'unlocked',
-      vault: await maybeSeedDemo(status.vault),
+      vault: await maybeSeedDemo(vault),
       canRecover: status.canRecover,
     });
-  },
-
-  createVault: async (password) => {
-    const { vault, recoveryCode } = await initializeVault(password);
-    // 设了密码就必须马上再解锁一次：密码记错要当场发现，不能等下次重启
-    set(
-      password
-        ? {
-            phase: 'locked',
-            vault: null,
-            canRecover: true,
-            notice: 'notice.confirm-new-password',
-            pendingRecovery: recoveryCode,
-          }
-        : { phase: 'unlocked', vault: await maybeSeedDemo(vault), canRecover: false, notice: null },
-    );
-    return recoveryCode;
   },
 
   unlockWithPassword: async (password) => {
@@ -246,8 +270,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ vault: current });
       throw error;
     }
-    // 每天第一次改动顺手留一份备份（同一天不会重复）
-    await maybeBackup(next);
+    // 每天第一次改动顺手留一份备份（同一天不会重复）。
+    // 必须真看这个开关：不看的话设置里"每天自动备份"那一项就是个点了没反应的假开关，
+    // 而"我以为已经关了、它其实每天都在写盘"是最不该被误判的一类状态。
+    // 关掉之后不再产新快照，已经写过的旧快照保持原样 —— 关开关不该等于删备份
+    if (next.settings.autoBackup) await maybeBackup(next);
   },
 
   setSettings: async (patch) => {
@@ -260,8 +287,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   back: () => {
     const sheet = get().sheet;
     if (!sheet) return;
-    // 导入/导出是从设置里进来的：返回时回到设置，而不是直接掉回列表
-    if ((sheet.kind === 'export' || sheet.kind === 'import') && sheet.from === 'settings') {
+    // 导入/导出/最近删除都是从设置里进来的：返回时回到设置，而不是直接掉回列表
+    if (
+      sheet.kind === 'trash' ||
+      ((sheet.kind === 'export' || sheet.kind === 'import') && sheet.from === 'settings')
+    ) {
       set({ sheet: { kind: 'settings' } });
       return;
     }
@@ -298,7 +328,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteAccount: async (id) => {
     await get().mutate((vault) => removeAccountFromVault(vault, id));
     set({ sheet: null });
-    get().showToast('toast.deleted');
+    get().showToast('toast.trashed');
+  },
+
+  restoreTrashed: async (id) => {
+    const current = get().vault;
+    if (!current) return false;
+    const target = current.trash.find((account) => account.id === id);
+    if (!target) return false;
+    // 同名冲突：恢复回去会和列表里某条撞名（密钥不同）。不拦，只上报给界面提示。
+    // 口径与 backup.ts 的 labelKey 一致：trim + 小写
+    const collides = current.accounts.some(
+      (account) =>
+        account.issuer.trim().toLowerCase() === target.issuer.trim().toLowerCase() &&
+        account.account.trim().toLowerCase() === target.account.trim().toLowerCase(),
+    );
+    await get().mutate((vault) => restoreTrashedInVault(vault, id));
+    // 不关页：最近删除里常有多条要连续恢复，关掉会打断操作。留在原地，
+    // 列表随 vault 变化自动刷新，这一条会从 trash 里消失。
+    if (collides) get().showToast('toast.restored-trash-collide', { tone: 'danger' });
+    else get().showToast('toast.restored-trash');
+    return collides;
+  },
+
+  purgeTrashed: async (id) => {
+    await get().mutate((vault) => purgeTrashed(vault, id));
+    // 同样不关页，方便连续清理
+    get().showToast('toast.purged');
   },
 
   togglePin: async (id) => {
@@ -320,6 +376,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ sheet: null });
     get().showToast('toast.imported', { vars: { count: drafts.length } });
     return drafts.length;
+  },
+
+  restoreBackup: async () => {
+    // 不走 `mutate`：恢复写进去的是"昨天的自己"，让它顺手覆盖今天那份快照
+    // 等于用旧数据顶掉新数据，真出事时反而少了一层可退的地方
+    let result;
+    try {
+      result = await restoreLatestBackup();
+    } catch {
+      get().showToast('toast.restore-failed', { tone: 'danger' });
+      return 0;
+    }
+    if (!result) {
+      get().showToast('toast.restore-none');
+      return 0;
+    }
+    set({ vault: result.vault });
+    get().showToast('toast.restored', { vars: { count: result.added } });
+    return result.added;
   },
 
   changePassword: async (current, next) => {
@@ -367,6 +442,22 @@ async function maybeSeedDemo(vault: Vault): Promise<Vault> {
 /** 界面读账户一律走这里，避免各处自己写 `vault?.accounts ?? []` */
 export function useAccounts(): readonly Account[] {
   return useAppStore((s) => s.vault?.accounts ?? NO_ACCOUNTS);
+}
+
+/**
+ * 「最近删除」里的账户，按删除时间倒序（最近删的在前）。
+ *
+ * 必须分两步：先选出 `vault.trash` 本身（引用稳定，只在库变更时才变），
+ * 再用 `useMemo` 排序。直接 `[...].sort()` 会在每次选值都造一个新数组，
+ * zustand 用 `Object.is` 比较新旧选值，永远判定"变了"→ 无限重渲染
+ * （设置页一打开就触发 "Maximum update depth exceeded"）。
+ */
+export function useTrash(): readonly Account[] {
+  const trash = useAppStore((s) => s.vault?.trash ?? NO_ACCOUNTS);
+  return useMemo(
+    () => [...trash].sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0)),
+    [trash],
+  );
 }
 
 /** 设置同理。默认值常量是稳定的，不会引起额外渲染 */

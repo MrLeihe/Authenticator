@@ -5,7 +5,10 @@ import { defineManifest } from '@crxjs/vite-plugin';
  *
  * 权限策略：**按阶段增量申请**，不要一次性写满。
  *   P0  storage                     —— 存 vault / settings
- *   V1.1 contextMenus + scripting + activeTab + sidePanel —— 右键插入、侧边栏
+ *   V1.0 activeTab                  —— 「扫描此页面上的二维码」：用户点扩展图标那一刻
+ *                                      授予、只对当时那个标签页有效，读不到别的页面。
+ *                                      没有它就只能让用户自己截图再粘贴回来
+ *   V1.1 contextMenus + scripting + sidePanel —— 右键插入、侧边栏
  *
  * 每日备份没有申请 alarms：备份只在数据真的变了时才做，交给写入路径判断，
  * 不需要一个会唤醒 SW 的定时器。
@@ -41,5 +44,5 @@ export default defineManifest({
     type: 'module',
   },
 
-  permissions: ['storage'],
+  permissions: ['storage', 'activeTab'],
 });

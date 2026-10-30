@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import type { ReactNode } from 'react';
 
 /**
  * 普通文本输入框。和 `PasswordInput` 是同一套尺寸与状态色，
@@ -76,34 +77,50 @@ export function TextInput({
   );
 }
 
-/** 分段选择器：算法、位数、周期这类"三选一"用它，比下拉框少一次点击 */
+/**
+ * 分段选择器：算法、位数、周期这类"三选一"用它，比下拉框少一次点击。
+ *
+ * label 可选：设置页把标题交给外层卡片行渲染，这里只出控件，
+ * 否则标题会缩进到控件那一格，和同卡片里的其它行对不齐。
+ * 没有可见 label 时必须传 ariaLabel，读屏仍要能报出这一组是什么。
+ */
 export function Segmented<T extends string | number>({
   label,
+  ariaLabel,
   value,
   options,
   onChange,
 }: {
-  label: string;
+  label?: string;
+  ariaLabel?: string;
   value: T;
-  options: ReadonlyArray<{ value: T; label: string }>;
+  options: ReadonlyArray<{ value: T; label: string; icon?: ReactNode }>;
   onChange: (value: T) => void;
 }) {
+  const groupLabel = label ?? ariaLabel;
   return (
     <div>
-      <span className="mb-1.5 block text-[12px] font-medium text-fg-muted">{label}</span>
-      <div className="flex rounded-[8px] bg-surface-alt p-0.5" role="group" aria-label={label}>
+      {label && (
+        <span className="mb-1.5 block text-[12px] font-medium text-fg-muted">{label}</span>
+      )}
+      <div
+        className="flex rounded-[9px] bg-surface-alt p-[3px]"
+        role="group"
+        aria-label={groupLabel}
+      >
         {options.map((option) => (
           <button
             key={String(option.value)}
             type="button"
             aria-pressed={value === option.value}
-            className={`flex-1 rounded-[6px] py-1.5 text-[12px] font-medium transition-colors duration-150 ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1.5 text-[12px] font-medium transition-colors duration-150 ${
               value === option.value
                 ? 'bg-surface text-fg shadow-sm'
                 : 'text-fg-muted hover:text-fg'
             }`}
             onClick={() => onChange(option.value)}
           >
+            {option.icon}
             {option.label}
           </button>
         ))}

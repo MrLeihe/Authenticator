@@ -33,8 +33,13 @@ export function useResolvedDark(mode: ThemeMode): boolean {
  * 不需要重开弹窗。`system` 时保持监听，用户选了 light / dark 就不再理会系统。
  *
  * 返回解绑函数，交给 `useEffect` 的清理阶段。
+ *
+ * 默认参数是 `light`（产品默认值）而不是 `system`：`main.tsx` 在 React 挂载前
+ * 就会先调一次，目的是别让弹窗先白后黑闪一下。那一步发生时库还没解开，
+ * 读不到用户真正选过的主题，只能按默认值猜 —— 猜成 `system` 的话，
+ * 系统是深色的用户每打开一次弹窗都会先黑后白，比猜错一个用户的偏好更常见。
  */
-export function applyTheme(mode: ThemeMode = 'system'): () => void {
+export function applyTheme(mode: ThemeMode = 'light'): () => void {
   const media = window.matchMedia('(prefers-color-scheme: dark)');
 
   const sync = () => {

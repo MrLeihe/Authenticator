@@ -6,16 +6,19 @@ import { AddAccountScreen } from '@/ui/screens/AddAccountScreen';
 import { DeleteAccountScreen } from '@/ui/screens/DeleteAccountScreen';
 import { EditAccountScreen } from '@/ui/screens/EditAccountScreen';
 import { ExportScreen } from '@/ui/screens/ExportScreen';
+import { GuideScreen } from '@/ui/screens/GuideScreen';
 import { ImportScreen } from '@/ui/screens/ImportScreen';
 import { ListScreen } from '@/ui/screens/ListScreen';
 import { LockScreen } from '@/ui/screens/LockScreen';
-import { OnboardScreen } from '@/ui/screens/OnboardScreen';
 import { SettingsScreen } from '@/ui/screens/SettingsScreen';
+import { TrashScreen } from '@/ui/screens/TrashScreen';
+import { Toast } from '@/ui/components/Toast';
 import { describeError, useMessage } from '@/ui/errors';
 import type { Message } from '@/ui/errors';
 import { useLang, useT } from '@/ui/i18n';
 import type { MessageKey } from '@/ui/i18n';
-import { useAppStore, useSettings, type Sheet } from '@/ui/store';
+import { useAppStore, useSettings } from '@/ui/store';
+import type { GuideId, Sheet } from '@/ui/store';
 import { applyTheme } from '@/ui/theme';
 
 /**
@@ -55,35 +58,90 @@ export default function App() {
 
   useAutoLock(phase === 'unlocked');
 
-  if (fatal) return <FatalScreen message={fatal} />;
-
-  // 恢复码是整屏替换而不是浮层：弹窗高度跟着内容走，浮层高了就会被裁掉
-  if (pendingRecovery) {
-    return <RecoveryCodeSheet code={pendingRecovery} onDone={clearPendingRecovery} />;
+  // 子界面也是整屏替换：弹窗高度跟着内容走，浮层高了会被裁掉且滚不动。
+  // 「删除」例外 —— 它是确认弹窗，应该浮在列表上，让用户看得到自己删的是哪一行
+  let screen: ReactNode;
+  if (fatal) {
+    screen = <FatalScreen message={fatal} />;
+  } else if (pendingRecovery) {
+    // 恢复码是整屏替换而不是浮层：弹窗高度跟着内容走，浮层高了就会被裁掉
+    screen = <RecoveryCodeSheet code={pendingRecovery} onDone={clearPendingRecovery} />;
+  } else if (phase === 'unlocked' && sheet && sheet.kind !== 'delete') {
+    screen = <SheetView key={sheetKey(sheet)} sheet={sheet} />;
+  } else {
+    const deleting = phase === 'unlocked' && sheet?.kind === 'delete';
+    screen = (
+      <>
+        {phase === 'loading' && <LoadingScreen />}
+        {phase === 'locked' && <LockScreen />}
+        {phase === 'unlocked' && (
+          // 删除弹窗打开时把列表置为 inert：读屏和键盘都不会再 Tab 进去，
+          // 焦点被圈在弹窗里
+          <div inert={deleting || undefined}>
+            <ListScreen />
+          </div>
+        )}
+        {deleting && <SheetView key={sheetKey(sheet!)} sheet={sheet!} />}
+      </>
+    );
   }
-
-  // 子界面也是整屏替换：弹窗高度跟着内容走，浮层高了会被裁掉且滚不动
-  if (phase === 'unlocked' && sheet) return <SheetView sheet={sheet} />;
 
   return (
     <>
-      {phase === 'loading' && <LoadingScreen />}
-      {phase === 'empty' && <OnboardScreen />}
-      {phase === 'locked' && <LockScreen />}
-      {phase === 'unlocked' && <ListScreen />}
+      {screen}
+      {/* Toast 是全局浮层，必须挂在所有界面之上：像「备份与恢复」这种在子界面里
+          点一下就出结果的动作，结果提示却只挂在列表页的话，设置页里点了等于白点 */}
+      <Toast />
     </>
   );
 }
 
-/** 每一屏对应的标题键，给读屏当对话框名字用 */
-const SHEET_LABELS: Record<Sheet['kind'], MessageKey> = {
-  add: 'add.title',
-  edit: 'edit.title',
-  delete: 'delete.title',
-  settings: 'settings.title',
-  export: 'export.title',
-  import: 'import.title',
+/** 每一屏对应的标题键，给读屏当对话框名字用。`guide` 按具体是哪一页取 */
+const GUIDE_TITLES: Record<GuideId, MessageKey> = {
+  setup: 'guide.setup.title',
+  phone: 'guide.phone.title',
+  secret: 'guide.secret.title',
+  rescue: 'guide.rescue.title',
 };
+
+function sheetLabel(sheet: Sheet): MessageKey {
+  switch (sheet.kind) {
+    case 'add':
+      return 'add.title';
+    case 'guide':
+      return GUIDE_TITLES[sheet.guide];
+    case 'edit':
+      return 'edit.title';
+    case 'delete':
+      return 'delete.title';
+    case 'settings':
+      return 'settings.title';
+    case 'trash':
+      return 'trash.title';
+    case 'export':
+      return 'export.title';
+    case 'import':
+      return 'import.title';
+  }
+}
+
+/**
+ * 子界面的挂载标识。
+ *
+ * 只认「换了一层」，不认同一层里的参数差异：`add` 的 `mode` / `autoscan`
+ * 是首帧初值，把它算进 key 会让重复打开同一个界面时把已经输入的内容清掉。
+ */
+function sheetKey(sheet: Sheet): string {
+  switch (sheet.kind) {
+    case 'guide':
+      return `guide:${sheet.guide}`;
+    case 'edit':
+    case 'delete':
+      return `${sheet.kind}:${sheet.id}`;
+    default:
+      return sheet.kind;
+  }
+}
 
 /**
  * 子界面外壳：管焦点和 Esc。
@@ -130,22 +188,34 @@ function SheetView({ sheet }: { sheet: Sheet }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [back]);
 
+  // 「删除」是浮层：它自带 fixed 遮罩和 dialog 语义，这里不能再用整屏的外壳
+  // 去套（会叠出两层 role=dialog、还把焦点抢到不可操作的容器上）。
+  if (sheet.kind === 'delete') {
+    return <DeleteAccountScreen id={sheet.id} />;
+  }
+
   return (
     <div
       ref={container}
       role="dialog"
       aria-modal="true"
-      aria-label={t(SHEET_LABELS[sheet.kind])}
+      aria-label={t(sheetLabel(sheet))}
       tabIndex={-1}
       // 整屏容器不需要焦点环：它不可操作，画一圈反而像出了错
-      className="outline-none ring-0 focus-visible:ring-0"
+      // 整屏入场用 8px 上浮（sheet-in）而不是纯淡入：参考实现就是这么做的。
+      // 位移只给 8px —— 这里只是"换了一层内容"，位移太大会有整屏在跳的错觉。
+      // 160ms 因为子界面常常是"点一下马上要看到"的操作，再长就开始等
+      className="animate-sheet-in outline-none ring-0 focus-visible:ring-0"
     >
-      {sheet.kind === 'add' && <AddAccountScreen />}
+      {sheet.kind === 'add' && (
+        <AddAccountScreen mode={sheet.mode} autoscan={sheet.autoscan} />
+      )}
+      {sheet.kind === 'guide' && <GuideScreen guide={sheet.guide} />}
       {sheet.kind === 'edit' && <EditAccountScreen id={sheet.id} />}
-      {sheet.kind === 'delete' && <DeleteAccountScreen id={sheet.id} />}
       {sheet.kind === 'settings' && <SettingsScreen />}
+      {sheet.kind === 'trash' && <TrashScreen />}
       {sheet.kind === 'export' && <ExportScreen />}
-      {sheet.kind === 'import' && <ImportScreen />}
+      {sheet.kind === 'import' && <ImportScreen initialText={sheet.text} />}
     </div>
   );
 }

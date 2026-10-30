@@ -10,6 +10,9 @@
   /* 亮色：systemGray */
   --gray-50: 242 242 247;
   --gray-100: 235 235 240;
+  /* 账户行 hover 底：夹在 --gray-100 与 --gray-200 之间一档。
+     用 --gray-100 只有 7 级灰差，跟页面底（242）几乎看不出区别 */
+  --gray-150: 232 232 237;
   --gray-200: 229 229 234;
   --gray-300: 209 209 214;
   --gray-400: 142 142 147;
@@ -64,12 +67,29 @@
   --bg: var(--gray-50);
   --surface: 255 255 255;
   --surface-alt: var(--gray-100);
+  /* 账户行 hover：必须比 --bg（gray-50 / 242）深，
+     否则半透明叠在白卡上正好落回页面底色 —— 那一行看起来像卡片被挖了个洞，
+     左右边缘会和弹窗背景连成一片，卡片的轮廓当场断掉 */
+  --row-hover: var(--gray-150);
   --separator: var(--gray-200);
   --fg: var(--gray-900);
+  /* 分组标题这类"次级但需要读清"的文字：比正文淡、比 --fg-muted 实，
+     纯 --fg-muted（108）做标题会发虚，撑不起一组内容的门槛感 */
+  --fg-secondary: var(--gray-700);
   --fg-muted: var(--gray-500);
   --accent: var(--accent-500);
   --accent-press: var(--accent-600);
   --code: var(--accent-500);
+  /* 空态第三张卡（只有一串密钥）的图标色。avatar-5 本来就是色板里唯一的紫，
+     复用而不是新调一个 —— 暗色下这一档也够亮，不必另配 */
+  --violet: var(--avatar-5);
+  /* 空态第四张卡（别的应用/备份文件）的图标色。同样是复用头像色板里的青，
+     亮暗两色下对比度都够，不另开数值 */
+  --teal: var(--avatar-8);
+  /* 倒计时环与环心数字：灰色，不跟验证码抢颜色。
+     环是"还剩几秒"的背景信息，蓝色会让人以为它和验证码是一体的 */
+  --tick: var(--gray-600);
+  --tick-track: var(--gray-200);
   --warn: var(--warn-rgb);
   --success: var(--success-rgb);
   --danger: var(--danger-rgb);
@@ -82,13 +102,20 @@
   --bg: var(--dark-900);
   --surface: var(--dark-800);
   --surface-alt: var(--dark-700);
+  /* 暗色下比 surface 亮一档就够了：0 的页面底上没有"撞色"问题 */
+  --row-hover: var(--dark-700);
   --separator: var(--dark-600);
   --fg: 255 255 255;
+  --fg-secondary: var(--dark-300);
   --fg-muted: var(--dark-400);
   --accent: var(--accent-400);
   --accent-press: var(--accent-500);
   /* 黑底上 accent-400 的对比度只有 4.3:1，24px 等宽数字会发糊，提亮一档 */
   --code: var(--accent-300);
+  /* 环在暗色下不能用 gray-600：那是给亮底准备的，落在 28 28 30 上等于消失。
+     轨道比 --separator 亮一档（dark-500），否则整圈只剩进度弧，看着像被裁掉半边 */
+  --tick: var(--dark-300);
+  --tick-track: var(--dark-500);
   --warn: 255 159 10;
   --success: 48 209 88;
 
@@ -128,23 +155,44 @@
 }
 
 @layer components {
-  /* 验证码：24px 等宽、3+3 分组、永远 LTR */
+  /* 验证码：24px 等宽、3+3 分组、永远 LTR。
+     字重 500：等宽字体在 24px 下笔画偏细，正文字重会让它看起来"薄"，
+     加半档后和旁边的倒计时环、账户名的视觉重量才对得上 */
   .code {
-    @apply font-digit text-digit tabular-nums text-code;
+    @apply font-digit text-digit font-medium tabular-nums text-code;
     direction: ltr;
     unicode-bidi: isolate;
+    /* 等宽字体的空格是一个完整字宽（0.6em = 24px 下 14.4px），3+3 那道缝
+       比数字本身还宽，看着像两串码。收掉 0.22em —— 留 0.4em 左右，
+       约等于半个数字宽，分组还在，但不再抢眼。
+       用 em 而不是 px：紧凑视图 17px、表单预览 17px 都复用这个类，等比收才不跑偏 */
+    word-spacing: -0.22em;
   }
 
-  /* 账户行底部分隔线：左右内缩 16px，最后一行不画 */
+  /* 账户行底部分隔线：左右内缩 16px，最后一行不画。
+     经典版式要通栏到边，靠容器上的 --row-divider-inset 改，而不是再复制一份类名 */
   .row-divider {
     @apply relative;
   }
   .row-divider::after {
     content: '';
-    @apply absolute bottom-0 left-4 right-4 h-px bg-separator;
+    @apply absolute bottom-0 h-px bg-separator;
+    left: var(--row-divider-inset, 16px);
+    right: var(--row-divider-inset, 16px);
   }
   .row-divider:last-child::after {
     @apply hidden;
+  }
+
+  /* 卡片内部的行分隔线：相邻子元素之间画一根内缩的线。
+     为什么不用 divide-y：divide-y 是从卡片边缘通栏到底的，
+     在圆角卡片里会把圆角切出一道直角，而且右边贴边会显得卡住。 */
+  .card-divide > * + * {
+    @apply relative;
+  }
+  .card-divide > * + *::before {
+    content: '';
+    @apply absolute left-4 right-4 top-0 h-px bg-separator;
   }
 }
 

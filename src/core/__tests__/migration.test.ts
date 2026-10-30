@@ -182,6 +182,16 @@ describe('迁移码 · 失败路径', () => {
     );
   });
 
+  it('版本 2 照常解析 —— 新版 Google Authenticator 导出的就是它', () => {
+    const uri = migrationUri({
+      items: [otpParams({ secret: RFC_SECRET, name: 'alice', issuer: 'ACME' })],
+      version: 2,
+    });
+    const result = parseMigrationUri(uri);
+    expect(result?.accounts).toHaveLength(1);
+    expect(result?.accounts[0]).toMatchObject({ issuer: 'ACME', account: 'alice' });
+  });
+
   it('版本比我们新 → unsupported-version', () => {
     const uri = migrationUri({ items: [otpParams({ secret: RFC_SECRET, name: 'a' })], version: 3 });
     try {

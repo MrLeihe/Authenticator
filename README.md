@@ -53,9 +53,9 @@ pnpm build       # 产出 dist/
 pnpm dev
 ```
 
-然后在 `chrome://extensions` 打开开发者模式，选择「加载已解压的扩展程序」，指向 `dist/`。crxjs 会在你改代码后自动刷新。
+然后在 `chrome://extensions` 打开开发者模式，选择「加载已解压的扩展程序」，**指向 `dist/`（不是仓库根目录）**。`manifest.json` 是构建期由 `manifest.config.ts` 生成的，仓库根目录故意没有这个文件——选根目录会报「清单文件缺失或不可读取」。crxjs 会在你改代码后自动刷新。
 
-> ⚠️ `pnpm dev` 运行期间会持续改写 `dist/`，此时 `dist/service-worker-loader.js` 里写的是 `http://localhost:5173/...` 的 HMR 地址。**打包前先停掉 dev server，或 `rm -rf dist` 后重新 `pnpm build`**，否则装进浏览器会白屏。正确的产物里这一行是 `import './assets/index.ts-xxx.js';`。
+> ⚠️ `pnpm dev` 运行期间会持续改写 `dist/`，此时 `dist/service-worker-loader.js` 里写的是 `http://localhost:5173/...` 的 HMR 地址（`dist/src/popup/index.html` 会成为一张写着 `CRXJS DEV MODE` 的占位页）。这版装进浏览器只有在 dev server 活着时才能用，好处是改代码自动刷新；**要装正式版先停掉 dev server，`rm -rf dist` 后重新 `pnpm build`**，否则装进去会白屏或跳到 localhost。正确的产物里这一行是 `import './assets/index.ts-xxx.js';`。
 
 想调样式又不想反复重载扩展，可以直接在浏览器打开 `http://localhost:5173/src/popup/index.html`，非扩展环境下版本号会显示为「开发预览」。
 
@@ -79,7 +79,7 @@ src/
 │   ├── env.ts
 │   ├── storage.ts        # local / session 两个区 + 无 chrome 时的内存降级
 │   ├── clipboard.ts
-│   ├── qr.ts             # jsQR 解码（白底放大后再试一次，截图也能扫）
+│   ├── qr.ts             # 图片 → 二维码文本：BarcodeDetector 优先，jsQR 兜底
 │   ├── files.ts          # Blob + <a download> 触发下载，不申请 chrome.downloads
 │   └── vault-service.ts  # 冷启动状态机、解锁、开关密码、自动锁、备份
 ├── background/  # MV3 service worker：只注册事件，不持有状态、不做计时
@@ -123,11 +123,15 @@ public/
 
 **备份与迁移。** 导出文件用「导出密码」单独派生一把密钥（自己的随机盐 + PBKDF2-SHA256 / 600k），不碰保险库的 DEK——备份必须能在 DEK 已经不存在的机器上打开，否则重装一次就等于没有备份。两种密文靠 AAD 分域，把保险库密文塞进导出文件会当场解密失败，而不是一路解到底再抛个 JSON 解析错。导入只做加法，判定**先密钥后名字**：同一把密钥就是同一条凭据（改过名字也跳过），同名但密钥不同说明用户重新绑定了这个站点，两条都可能有效，所以提示后新增，绝不覆盖。Google 的迁移码是 protobuf，自己写了一百来行的读取器，没有为主流程的一个分支拖进一个 protobuf 运行库；分批导出的多张码会明确告诉用户"这是第 2/3 张"，而不是让后几张静默丢失。下载用 `Blob` + `<a download>` 触发，不为它申请 `chrome.downloads`。明文导出是显式选择，界面在按钮上方就把后果写明：拿到这个文件的人可以直接生成你的验证码。
 
-**权限最小化。** 当前 `manifest.json` 只申请 `storage`。`contextMenus`、`scripting` 这些等到真正用到的功能落地时再加——用不到却申请是商店审核最常见的打回原因。全程不申请 `host_permissions`。每日备份也没有申请 `alarms`：备份只在数据真的变了时才做，交给写入路径判断，不需要一个会唤醒 service worker 的定时器。
+**权限最小化。** `manifest.json` 申请 `storage` 和 `activeTab` 两个。`activeTab` 只为一件事：在用户点扩展图标的那一刻截一张当前标签页，用来识别屏幕上那个二维码——它不常驻、不读别的标签页、读不到历史，比任何 `<all_urls>` 方案都窄。`contextMenus`、`scripting` 这些等到真正用到的功能落地时再加，用不到却申请是商店审核最常见的打回原因。全程不申请 `host_permissions`。每日备份也没有申请 `alarms`：备份只在数据真的变了时才做，交给写入路径判断，不需要一个会唤醒 service worker 的定时器。
 
 **性能余量。** 验证码按 `accountId → counter` 缓存，每 250ms 只重算即将翻页的那几个账户，不是每 tick 全量重算。20 个账户实测：冷启动全量 0.8ms，同窗口内的 tick 摊销 0.008ms，跨窗口翻页那一次 0.5ms。倒计时的环靠 CSS `transition` 走针，JS 每秒只改一次目标值。
 
-**录入。** 扫码走的是 `<input type="file">` 加拖放、粘贴，图片在本地用 jsQR 解出来——不申请 `camera`，也就不必为一个"偶尔用一次"的功能去向用户解释摄像头权限。解不出时会先把图铺到白底上放大重试一次，因为很多二维码截图是透明的，直接把原始像素喂进去会失败。二维码解析交给 `core/otpauth.ts`，它对现实世界的脏数据比较宽容：协议名大小写不限、`issuer` 可以只出现在 label 里、`digits` / `period` 缺了按 6 / 30 处理，但密钥本身严格按 RFC 4648 规范解码，不做"猜"。
+**录入。** 扫码走的是 `<input type="file">` 加拖放、粘贴，图片在本地解出来——不申请摄像头权限，也就不必为一个"偶尔用一次"的功能去向用户解释摄像头。也可以直接扫当前页面：`activeTab` + `chrome.tabs.captureVisibleTab` 截一张当前标签页，同样在本地解。
+
+解码**先问浏览器内置的 `BarcodeDetector`**，它不存在才退到自己带的 jsQR。这不是为了省体积，是因为 jsQR 认不出高版本的密集二维码：拿一张 Google Authenticator 的迁移码截图（v22，105 模块，每模块 6.9px）实测，十档重采样里只有三档能解，而 `BarcodeDetector` 四种喂法全部一次命中，还快一个数量级。两条路都在本地跑，图不出内存。解不出时会先把图铺到白底上再试，因为很多二维码截图是透明的，直接把原始像素喂进去会失败。
+
+二维码内容交给 `core/otpauth.ts`，它对现实世界的脏数据比较宽容：协议名大小写不限、`issuer` 可以只出现在 label 里、`digits` / `period` 缺了按 6 / 30 处理，但密钥本身严格按 RFC 4648 规范解码，不做"猜"。如果解出来的是 `otpauth-migration://`（手机导出的是一**批**账户），会转到导入页逐条预览，而不是塞进单账户表单。
 
 **排序。** `order` 用间隔 1024 的稀疏整数，插入时取前后中点，正常使用几乎不会触发重排；真的挤到没法插了，才在同一个分组内重新编号。`pinned` 是独立于 `order` 的第一排序键——否则「置顶」会被下一次拖拽改掉的相对位置带走。
 
@@ -138,13 +142,13 @@ public/
 - 密钥（`secret`）只以密文形式落盘；开启加密后，未解锁时内存里也不存在明文
 - 解锁后的密钥只放在 `chrome.storage.session`，且收紧到只有扩展自己的页面可读；关浏览器即消失
 - 复制验证码后按设置自动清空剪贴板
-- 不读取标签页内容，不判断你登录了哪些网站
+- **只有在你自己点开扩展、并主动按「扫描此页面」时**，才会截取当前标签页的一张画面，用于在本机识别二维码；截图只存在于内存，不落盘、不上传，失败即丢弃。除此之外不读取标签页内容，也不判断你登录了哪些网站
 
 ## 上架
 
 - [STORE.md](STORE.md)：单一用途、逐条权限理由、中英双语短描述与详细描述、素材清单、审核备注、提交前自查
 - [PRIVACY.md](PRIVACY.md)：隐私政策（中英双语）。商店后台要的是一个**能公开访问的 URL**，仓库里的文件只是源本，提交前请自行托管一份
-- 版本 `1.0.0`，唯一权限 `storage`，不申请 `host_permissions`，无远程代码
+- 版本 `1.0.0`，权限 `storage` + `activeTab`，不申请 `host_permissions`，无远程代码
 
 ## 参与开发
 
@@ -166,4 +170,4 @@ public/
 
 [MIT](LICENSE) © 2026 MrLeihe
 
-产物里原样打入了 [jsQR](https://github.com/cozmo/jsQR)（Apache-2.0）用于解码二维码图片，未作修改。第三方许可全文见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
+产物里原样打入了 [jsQR](https://github.com/cozmo/jsQR)（Apache-2.0），在浏览器没有内置 `BarcodeDetector` 时用它解码二维码图片，未作修改。第三方许可全文见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。

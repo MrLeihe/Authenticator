@@ -48,9 +48,9 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 >
 > **数据只在你手里**
 >
-> - 不联网、无账号、无遥测、无内购。扩展只申请了 `storage` 一个权限，没有网站访问权限
+> - 不联网、无账号、无遥测、无内购。只申请 `storage` 和 `activeTab` 两个权限，没有网站访问权限（`activeTab` 只在你点开扩展并按下「扫描此页面」时对当前标签页生效一次）
 > - 密钥始终以密文（AES-256-GCM）保存；可以设置主密码，也可以不设
-> - 忘记主密码时用恢复码找回；每天自动留一份加密备份（最多 7 份）
+> - 忘记主密码时用恢复码找回；每天自动留一份加密备份（最多 7 份），账户删光了还能从备份一键恢复
 > - 导出加密备份，或导出明文文本搬到别的验证器
 >
 > **它不做什么**
@@ -108,21 +108,21 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 | 项 | 位置 / 状态 |
 | --- | --- |
 | 隐私政策 URL | https://github.com/MrLeihe/Authenticator/blob/main/PRIVACY.md （建议后续托管到自己的域名或 GitHub Pages，商店后台要求可公开访问） |
-| 隐私实践表单 | "不收集任何用户数据"；仅 `storage` 权限；不使用远程代码 |
+| 隐私实践表单 | "不收集任何用户数据"；`storage` + `activeTab` 权限；不使用远程代码 |
 | 第三方许可 | `THIRD_PARTY_LICENSES.md`（jsQR，Apache-2.0） |
 | 开源许可 | `LICENSE`（MIT） |
 | 数据披露 | 必须在隐私政策里主动写明 `chrome.storage.session` 的内存态前提（`PRIVACY.md` §3 已写） |
 
 ## 6. 审核备注（Reviewer notes，可填一段）
 
-> This extension has no host permissions and makes no network requests. All code is bundled; there is no remote script and no `eval`. The only permission is `storage`, used for the encrypted vault, settings and local backups. To try it: click the toolbar icon, choose "先不用密码，直接开始" (skip the password) to create an unencrypted vault, then add an account by pasting any `otpauth://` URI. No sign-in or test account is required.
+> This extension has no host permissions and makes no network requests. All code is bundled; there is no remote script and no `eval`. It requests two permissions: `storage` for the encrypted vault, settings and local backups, and `activeTab` solely for the "Scan this page" button — one capture of the current tab, decoded in memory, never written to disk or uploaded. To try it: click the toolbar icon (no password is required to start), then add an account by pasting any `otpauth://` URI, uploading a QR screenshot, or pressing "Scan this page" on any site showing a QR code. No sign-in or test account is required.
 
 ## 7. 提交前自查
 
-- [x] `pnpm test && pnpm typecheck && pnpm build` 全绿（207 断言 / 10 个测试文件）
+- [x] `pnpm test && pnpm typecheck && pnpm build` 全绿（216 断言 / 11 个测试文件）
 - [x] 产物里没有 `localhost` 残留（`grep -r localhost dist` 为空）
 - [x] `pnpm zip` 产出 `sixring-1.0.0.zip`（约 170 KB，已剔除 `.map`，19 个文件），上传的就是这个包
-- [x] `manifest.json` 里只有 `storage` 一个权限，无 `host_permissions`
+- [x] `manifest.json` 里只有 `storage` + `activeTab` 两个权限，无 `host_permissions`
 - [x] 素材尺寸核对：截图 4 张均 1280×800、宣传图 440×280、图标 128×128
 - [x] 商店图标与工具栏图标是同一套几何
 - [x] 隐私政策可公开访问

@@ -27,6 +27,12 @@ export const KEYS = {
   /** 恢复码包装：与主包装并存，只有 kind:'password' 时才有 */
   dekWrapRecovery: '2fa:dekWrapRecovery',
   meta: '2fa:meta',
+  /**
+   * 一次性提示的"关掉过"时间戳（目前只有未设密码的提示条）。
+   * 放明文的 `local` 而不是加密的 vault：它描述的是**这台设备**上界面提示的状态，
+   * 跟着备份跑到另一台机器上反而是错的；而且它不含任何账户信息。
+   */
+  uiHint: '2fa:ui-hint',
   /** session 区 */
   dek: '2fa:dek',
   unlockedAt: '2fa:unlockedAt',

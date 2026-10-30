@@ -138,6 +138,21 @@ const ALGORITHMS: Record<number, Algorithm | 'MD5'> = {
 /** MigrationPayload.OtpType */
 const TOTP = 2;
 
+/**
+ * 认得的载荷版本。
+ *
+ * Google Authenticator 新版（7.x 之后）导出的 `version` 是 **2**，而 v1 / v2 的
+ * `MigrationPayload` 字段编号逐一对齐（1 = 条目、2 = version、3 = batch_size、
+ * 4 = batch_index），每条 `OtpParameters` 内部也是同一套（1 = secret、2 = name、
+ * 3 = issuer、4 = algorithm、5 = digits、6 = type、7 = counter）。
+ * 换句话说这个数字涨了，格式没变 —— 拿它当"新格式，读不了"直接拒掉，
+ * 会让所有用新版 App 导出的用户看到一句"来自更新的版本"，而其实一条都没问题。
+ *
+ * 真正的新格式只会在字段定义变化时出现，那时字段编号会先对不上；
+ * 再往上加一档即可，仍然保留"更老的我们肯读、太新的不猜"这条界线。
+ */
+const SUPPORTED_VERSION = 2;
+
 function decodeParams(raw: Uint8Array, index: number, issues: Diagnostic[]): NewAccountInput | null {
   const fields = readFields(raw);
 
@@ -222,7 +237,7 @@ export function parseMigrationUri(input: string): MigrationResult | null {
 
   const fields = readFields(bytes);
   const version = number(fields, 2);
-  if (version > 1) {
+  if (version > SUPPORTED_VERSION) {
     throw new MigrationError(
       'unsupported-version',
       `payload version ${version} is newer than supported`,

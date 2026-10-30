@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   ORDER_STEP,
+  TRASH_RETENTION_MS,
   VaultError,
   addAccount,
   emptyVault,
+  expireTrash,
+  purgeTrashed,
   reorderAccount,
+  restoreTrashed,
   setPinned,
   nextOrder,
   normalizeVault,
@@ -43,6 +47,23 @@ describe('normalizeVault · 宽容读取', () => {
     expect(vault.accounts[0]?.algorithm).toBe('SHA256');
     expect(vault.accounts[0]?.digits).toBe(8);
     expect(vault.settings.view).toBe('compact');
+  });
+
+  it('列表风格：老数据没有这个字段就当现代，认不出的值也退回现代', () => {
+    // 加 style 之前存下的库：字段不存在，不能因此判成坏设置
+    const legacy = normalizeVault({ version: 1, settings: { view: 'normal' } });
+    expect(legacy.vault.settings.style).toBe('modern');
+    expect(legacy.notes).toEqual([]);
+
+    // 手改存储塞进来的野值：落回默认，并留下一条 note，界面不至于认不出来
+    const weird = normalizeVault({ version: 1, settings: { style: 'neon' } });
+    expect(weird.vault.settings.style).toBe('modern');
+    expect(weird.notes).toContainEqual({ code: 'setting-bad-type', key: 'style' });
+
+    // 合法值要原样保留 —— 用户选的经典版不能被"规范化"掉
+    expect(normalizeVault({ version: 1, settings: { style: 'classic' } }).vault.settings.style).toBe(
+      'classic',
+    );
   });
 
   it('坏账户跳过，好账户照常救回来，并记下跳了哪几个', () => {
@@ -168,6 +189,91 @@ describe('账户增删改', () => {
     const after = removeAccount(vault, target);
     expect(after.accounts).toHaveLength(1);
     expect(after.accounts[0]?.issuer).toBe('B');
+  });
+});
+
+describe('最近删除（软删除）', () => {
+  const withOne = () => addAccount(emptyVault(), { issuer: 'A', account: 'a', secret: SECRET });
+
+  it('删除把账户移进 trash 并记下 archivedAt，accounts 清空', () => {
+    const vault = withOne();
+    const id = vault.accounts[0]!.id;
+    const after = removeAccount(vault, id);
+    expect(after.accounts).toHaveLength(0);
+    expect(after.trash).toHaveLength(1);
+    expect(after.trash[0]?.id).toBe(id);
+    expect(after.trash[0]?.archivedAt).toBeTypeOf('number');
+  });
+
+  it('删除不存在的账户是无害的空操作', () => {
+    const vault = withOne();
+    expect(removeAccount(vault, 'nope')).toBe(vault);
+  });
+
+  it('恢复把账户移回 accounts 并去掉 archivedAt', () => {
+    const vault = withOne();
+    const id = vault.accounts[0]!.id;
+    const trashed = removeAccount(vault, id);
+    const restored = restoreTrashed(trashed, id);
+    expect(restored.accounts).toHaveLength(1);
+    expect(restored.accounts[0]?.id).toBe(id);
+    expect(restored.accounts[0]?.archivedAt).toBeUndefined();
+    expect(restored.trash).toHaveLength(0);
+  });
+
+  it('恢复不存在的账户抛错', () => {
+    expect(() => restoreTrashed(emptyVault(), 'nope')).toThrow(VaultError);
+  });
+
+  it('删除后新增账户再恢复，order 不冲突', () => {
+    let vault = withOne();
+    const target = vault.accounts[0]!;
+    const id = target.id;
+    const oldOrder = target.order;
+    // 删除 A，然后新增一个 B —— nextOrder 会复用 A 原来的 order
+    vault = removeAccount(vault, id);
+    vault = addAccount(vault, { issuer: 'B', account: 'b', secret: SECRET });
+    const b = vault.accounts[0]!;
+    // 恢复 A：不应沿用被 B 占用的旧 order
+    const restored = restoreTrashed(vault, id);
+    const a = restored.accounts.find((x) => x.id === id)!;
+    expect(a.order).not.toBe(oldOrder);
+    expect(a.order).not.toBe(b.order);
+    expect(a.order).toBeGreaterThan(b.order);
+  });
+
+  it('彻底删除把账户从 trash 移除', () => {
+    const vault = withOne();
+    const id = vault.accounts[0]!.id;
+    const trashed = removeAccount(vault, id);
+    const purged = purgeTrashed(trashed, id);
+    expect(purged.trash).toHaveLength(0);
+  });
+
+  it('过期清理：超过 30 天的才移除', () => {
+    const vault = withOne();
+    const id = vault.accounts[0]!.id;
+    let trashed = removeAccount(vault, id);
+    // 刚删的不会过期
+    expect(expireTrash(trashed).trash).toHaveLength(1);
+    // 把 archivedAt 拨回 31 天前，就该清掉
+    trashed = {
+      ...trashed,
+      trash: trashed.trash.map((a) => ({ ...a, archivedAt: Date.now() - TRASH_RETENTION_MS - 1 })),
+    };
+    expect(expireTrash(trashed).trash).toHaveLength(0);
+  });
+
+  it('normalizeVault 兼容没有 trash 字段的旧数据', () => {
+    const input = {
+      version: 1,
+      accounts: [{ id: 'a1', issuer: 'X', account: 'x', secret: SECRET }],
+      groups: [],
+      settings: DEFAULT_SETTINGS,
+    };
+    const { vault } = normalizeVault(input);
+    expect(vault.trash).toEqual([]);
+    expect(vault.accounts).toHaveLength(1);
   });
 });
 

@@ -1,7 +1,8 @@
 # 内部设计文档：留在本地，不进公开仓库
 # （里面有竞品实测记录与商业取舍，不适合公开）
-PLAN.md
-SPEC.md
+# 写全路径而不是裸文件名：它们只该待在 docs/ 里，换个位置就该被 git 看见
+/docs/PLAN.md
+/docs/SPEC.md
 
 # 依赖与构建产物
 node_modules/

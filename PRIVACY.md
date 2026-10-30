@@ -2,7 +2,7 @@
 
 **Sixring - 两步验证器**（Chrome 扩展，以下简称"本扩展"）
 
-最后更新：2026-10-29
+最后更新：2026-10-30
 
 ---
 
@@ -23,7 +23,7 @@
 | 解锁后的会话密钥 | `chrome.storage.session` | 只对扩展自身页面可读，关闭浏览器即消失 |
 | 每日自动备份（最多 7 份） | `chrome.storage.local` | 同样是密文 |
 
-**不存的东西**：不存你的 Google 账号、不存你登录了哪些网站、不读取任何标签页内容、不记录剪贴板历史。
+**不存的东西**：不存你的 Google 账号、不存你登录了哪些网站、不读取任何标签页内容（§4 里那一张临时截图除外，它只经过内存）、不记录剪贴板历史。
 
 ## 3. 需要主动披露的一件事
 
@@ -35,9 +35,12 @@
 
 | 权限 | 用途 |
 | --- | --- |
-| `storage` | 保存加密后的保险库、设置与自动备份。这是本扩展**唯一**申请的权限。 |
+| `storage` | 保存加密后的保险库、设置与自动备份。 |
+| `activeTab` | 只用于「扫描此页面上的二维码」：你在某个网页上点开扩展、并主动按下这个按钮时，扩展会截取当前标签页的一张画面，在本机识别其中的二维码。它**不会常驻**：授权只在你点开扩展的那一刻对当前这一个标签页有效，扩展读不到其他标签页、也读不到浏览历史。 |
 
-本扩展不申请 `host_permissions`，因此无法读取任何网站的内容，也不会知道你在访问什么。
+截图只存在于内存中，用于本地解码，**不写入磁盘、不上传、识别结束即丢弃**。不按那个按钮就不会截任何东西。
+
+本扩展不申请 `host_permissions`，因此没有对任何网站的常驻访问权，也不会知道你平时在访问什么。
 
 ## 5. 剪贴板
 
@@ -65,7 +68,7 @@
 
 **Sixring - TOTP Authenticator** (the Chrome extension, "the extension")
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 ## The short version
 
@@ -84,7 +87,7 @@ There is no server, no analytics, no crash reporting and no telemetry of any kin
 | Unlocked session key | `chrome.storage.session` | Readable only by the extension's own pages; gone when the browser closes |
 | Daily automatic backups (up to 7) | `chrome.storage.local` | Also encrypted |
 
-**Not stored**: your Google account, which sites you sign in to, the contents of any tab, or your clipboard history.
+**Not stored**: your Google account, which sites you sign in to, the contents of any tab, or your clipboard history. The one screen capture described in §4 never touches disk.
 
 ## 3. One thing we disclose up front
 
@@ -96,9 +99,12 @@ In other words: **while the browser process is running and the vault is unlocked
 
 | Permission | Why |
 | --- | --- |
-| `storage` | To save the encrypted vault, settings and automatic backups. This is the **only** permission the extension requests. |
+| `storage` | To save the encrypted vault, settings and automatic backups. |
+| `activeTab` | Only for "Scan this page": when you open the extension on a web page and press that button, it captures one frame of the current tab and reads the QR code in it locally. The grant is **not persistent** — it applies to that single tab, only from the moment you opened the extension. The extension cannot read other tabs or your browsing history. |
 
-No `host_permissions` are requested, so the extension cannot read any website, and never learns what you visit.
+The capture stays in memory for decoding only: **never written to disk, never uploaded, discarded as soon as decoding finishes.** Nothing is captured unless you press that button.
+
+No `host_permissions` are requested, so the extension has no standing access to any website, and never learns what you visit.
 
 ## 5. Clipboard
 

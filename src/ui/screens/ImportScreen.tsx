@@ -4,6 +4,7 @@ import type { ParsedImport } from '@/core/backup';
 import type { OtpAuthParams } from '@/core/otpauth';
 import { decodeQrFile } from '@/platform/qr';
 import { Button, SecondaryButton, TextButton } from '../components/Button';
+import { BackIcon } from '../components/Icons';
 import { PasswordInput } from '../components/PasswordInput';
 import { ScreenHeader } from '../components/ScreenHeader';
 import {
@@ -26,7 +27,7 @@ import { useAccounts, useAppStore } from '../store';
  * 这些都必须让人先看见再决定。合并规则见 `core/backup.ts` 的 `planImport`：
  * 只做加法，绝不覆盖。
  */
-export function ImportScreen() {
+export function ImportScreen({ initialText }: { initialText?: string | undefined }) {
   const t = useT();
   const errorText = useErrorText();
   const back = useAppStore((s) => s.back);
@@ -111,6 +112,15 @@ export function ImportScreen() {
     return () => window.removeEventListener('paste', onPaste);
   });
 
+  // 从扫码或粘贴转过来的内容：进来时已经有东西可读，直接进预览。
+  // 再让用户把同一张图选一遍，等于否认他刚才做的那一步
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (initialText === undefined || initialText === '' || autoRan.current) return;
+    autoRan.current = true;
+    void read(initialText);
+  });
+
   const confirm = async () => {
     if (!plan || plan.add.length === 0) return;
     setBusy(true);
@@ -125,8 +135,11 @@ export function ImportScreen() {
 
   return (
     <div className="flex min-h-[280px] flex-col bg-bg pb-4">
+      {/* 标题跟着 step 走：预览态要确认的是"这批账户落不落盘"，
+          还挂着「导入」会让人以为返回键回到的是文件选择页，
+          实际它回到的是上一步的文件/内容来源 */}
       <ScreenHeader
-        title={t('import.title')}
+        title={t(step === 'preview' ? 'import.title-confirm' : 'import.title')}
         onBack={
           step === 'pick'
             ? back
@@ -139,9 +152,15 @@ export function ImportScreen() {
       <div className="flex-1 px-4 py-4">
         {step === 'pick' && (
           <div className="space-y-3">
+            {/* 虚线框铺在白卡上，而不是直接画在页面灰底上：
+                灰底上的虚线看着像"还没做完的表单"，白卡 + 虚线才是"把东西丢这里" */}
             <div
-              className={`flex flex-col items-center justify-center rounded-[12px] border-2 border-dashed px-4 py-7 text-center transition-colors duration-150 ${
-                dragging ? 'border-accent bg-accent/5' : 'border-separator'
+              className={`flex flex-col items-center justify-center rounded-card border-2 border-dashed px-4 py-7 text-center transition-colors duration-150 ${
+                busy
+                  ? 'border-accent/40 bg-surface'
+                  : dragging
+                    ? 'border-accent bg-accent/5'
+                    : 'border-separator bg-surface'
               }`}
               onDragOver={(event) => {
                 event.preventDefault();
@@ -154,12 +173,17 @@ export function ImportScreen() {
                 void handleFile(event.dataTransfer.files[0]);
               }}
             >
-              <p className="text-[13px] font-medium">{t('import.drop-title')}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">
-                {t('import.drop-hint')}
+              {/* 拖放和粘贴都没有"按钮"可以变身，所以读取态得落在这块本身 ——
+                  否则一张大图解码的那几百毫秒里整页一动不动，
+                  用户会以为没丢进去，然后重拖一次。替换标题而不是另起一行，是为了不动布局 */}
+              <p className="text-[14px] font-medium" aria-live="polite">
+                {t(busy ? 'import.reading' : 'import.drop-title')}
+              </p>
+              <p className="mt-1 text-[12px] leading-relaxed text-fg-muted">
+                {t(busy ? 'import.reading-hint' : 'import.drop-hint')}
               </p>
               <SecondaryButton
-                className="mt-3 w-auto px-4"
+                className="mt-3.5 w-auto px-4"
                 disabled={busy}
                 onClick={() => fileInput.current?.click()}
               >
@@ -178,8 +202,11 @@ export function ImportScreen() {
               />
             </div>
 
-            <div className="border-t border-separator pt-3">
-              <label htmlFor="import-text" className="mb-1.5 block text-[12px] font-medium text-fg-muted">
+            <div className="rounded-card bg-surface p-4">
+              <label
+                htmlFor="import-text"
+                className="mb-2 block text-[13px] font-semibold text-fg-secondary"
+              >
                 {t('import.paste-label')}
               </label>
               <textarea
@@ -191,43 +218,53 @@ export function ImportScreen() {
                 onChange={(event) => setText(event.target.value)}
                 className="w-full resize-none rounded-[8px] bg-surface-alt px-3 py-2 font-digit text-[12px] text-fg outline-none placeholder:text-fg-muted focus:ring-2 focus:ring-accent/40"
               />
-              <div className="mt-2">
-                <SecondaryButton disabled={busy || !text.trim()} onClick={() => void read(text)}>
-                  {t('import.parse')}
-                </SecondaryButton>
-              </div>
+              <SecondaryButton
+                className="mt-2.5"
+                disabled={busy || !text.trim()}
+                onClick={() => void read(text)}
+              >
+                {t('import.parse')}
+              </SecondaryButton>
             </div>
           </div>
         )}
 
         {step === 'password' && (
           <div className="space-y-3">
-            <p className="text-[12px] leading-relaxed text-fg">{t('import.password.body')}</p>
-            <PasswordInput
-              label={t('import.password.label')}
-              value={password}
-              // 一改密码就把上一次的"密码不对"收掉：否则输到一半还挂着红字，像是又错了
-              onChange={(value) => {
-                setPassword(value);
-                setError(null);
-              }}
-              autoFocus
-              disabled={busy}
-              onEnter={() => {
-                if (pendingText) void read(pendingText, password);
-              }}
-            />
-            <Button
-              disabled={busy || password.length === 0}
-              onClick={() => {
-                if (pendingText) void read(pendingText, password);
-              }}
-            >
-              {busy ? t('import.decrypting') : t('import.decrypt')}
-            </Button>
-            <TextButton className="w-full" onClick={reset} disabled={busy}>
-              {t('import.other-file')}
-            </TextButton>
+            {/* 说明在卡外当分组标题，输入框进白卡，按钮回到页面上 ——
+                和设置页「密码保护」同一套层次，别让一整屏文字都浮在灰底上 */}
+            <p className="px-2 text-[13px] leading-relaxed text-fg-secondary">
+              {t('import.password.body')}
+            </p>
+            <div className="rounded-card bg-surface p-4">
+              <PasswordInput
+                label={t('import.password.label')}
+                value={password}
+                // 一改密码就把上一次的"密码不对"收掉：否则输到一半还挂着红字，像是又错了
+                onChange={(value) => {
+                  setPassword(value);
+                  setError(null);
+                }}
+                autoFocus
+                disabled={busy}
+                onEnter={() => {
+                  if (pendingText) void read(pendingText, password);
+                }}
+              />
+            </div>
+            <div className="space-y-1.5 pt-1">
+              <Button
+                disabled={busy || password.length === 0}
+                onClick={() => {
+                  if (pendingText) void read(pendingText, password);
+                }}
+              >
+                {busy ? t('import.decrypting') : t('import.decrypt')}
+              </Button>
+              <TextButton className="w-full" onClick={reset} disabled={busy}>
+                {t('import.other-file')}
+              </TextButton>
+            </div>
           </div>
         )}
 
@@ -237,7 +274,10 @@ export function ImportScreen() {
 
         {/* 这一句往往是「为什么没导入成功」的唯一解释，读屏要能立刻听到 */}
         {error && (
-          <p role="alert" className="mt-3 text-[11px] leading-relaxed text-danger">
+          <p
+            role="alert"
+            className="mt-3 rounded-[10px] bg-danger/5 px-3.5 py-2.5 text-[12px] leading-relaxed text-danger"
+          >
             {error}
           </p>
         )}
@@ -264,51 +304,55 @@ function Preview({
   const shown = issues.slice(0, ISSUES_SHOWN);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {plan.batch && (
-        <p className="rounded-[8px] bg-warn/10 px-3 py-2 text-[11px] leading-relaxed text-fg">
+        <p className="rounded-[10px] bg-warn/10 px-3.5 py-3 text-[12px] leading-relaxed text-fg">
           {t('import.batch', { index: plan.batch.index + 1, total: plan.batch.size })}
         </p>
       )}
 
-      <div className="flex items-baseline gap-3 text-[12px]">
-        <span className="text-fg">{t('import.count.add', { count: plan.add.length })}</span>
-        {plan.skip.length > 0 && (
-          <span className="text-fg-muted">{t('import.count.skip', { count: plan.skip.length })}</span>
-        )}
-        {plan.issues.length > 0 && (
-          <span className="text-danger">{t('import.count.issues', { count: plan.issues.length })}</span>
-        )}
-      </div>
-
       {plan.add.length > 0 && (
-        <ul className="divide-y divide-separator rounded-[10px] bg-surface-alt/50">
-          {plan.add.map((entry) => (
-            <li
-              key={`${entry.draft.issuer}:${entry.draft.account}:${entry.draft.secret}`}
-              className="px-3 py-2"
-            >
-              <PreviewRow draft={entry.draft} />
-              {entry.note && (
-                <p className="mt-1 text-[11px] leading-relaxed text-warn">
-                  {message(describeNote(entry.note))}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
+        <section>
+          {/* 标题与卡内文字同样差 8px，和设置页的分组标题同一套规矩 */}
+          <h2 className="mb-2 px-2 text-[13px] font-semibold text-fg-secondary">
+            {t('import.count.add', { count: plan.add.length })}
+          </h2>
+          <div className="card-divide overflow-hidden rounded-card bg-surface">
+            {plan.add.map((entry) => (
+              <div
+                key={`${entry.draft.issuer}:${entry.draft.account}:${entry.draft.secret}`}
+                className="px-4 py-3"
+              >
+                <PreviewRow draft={entry.draft} />
+                {entry.note && (
+                  <p className="mt-1 text-[11px] leading-relaxed text-warn">
+                    {message(describeNote(entry.note))}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {plan.skip.length > 0 && (
-        <details className="rounded-[8px] bg-surface-alt/40 px-3 py-2">
-          <summary className="cursor-pointer text-[12px] text-fg-muted">
-            {t('import.skip-summary', { count: plan.skip.length })}
+        /* 折叠而不是铺开：这些条目不会进库，展开只是为了让人确认"我的某个账户没丢，
+           只是本来就有"。铺开会把「确认导入」挤出视野 */
+        <details className="card-divide overflow-hidden rounded-card bg-surface">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[13px] text-fg-muted transition-colors duration-150 hover:bg-row-hover [&::-webkit-details-marker]:hidden">
+            <span>{t('import.skip-summary', { count: plan.skip.length })}</span>
+            {/* 折叠时朝右、展开时朝下：details 没有自带箭头（marker 被摘掉了），
+                不给一个的话这行白条看着像说明文字，没人会想到能点开 */}
+            <BackIcon
+              size={14}
+              className="shrink-0 rotate-180 text-fg-muted transition-transform duration-150 [details[open]_&]:rotate-90"
+            />
           </summary>
-          <ul className="mt-2 space-y-1">
+          <ul className="px-4 pb-3">
             {plan.skip.map((entry) => (
               <li
                 key={`skip:${entry.draft.issuer}:${entry.draft.account}:${entry.draft.secret}`}
-                className="text-[11px] leading-relaxed text-fg-muted"
+                className="py-1 text-[12px] leading-relaxed text-fg-muted"
               >
                 {labelOf(entry.draft, t)} —— {message(describeSkip(entry.reason))}
               </li>
@@ -318,18 +362,23 @@ function Preview({
       )}
 
       {issues.length > 0 && (
-        <ul className="space-y-1 rounded-[8px] bg-danger/5 px-3 py-2">
-          {shown.map((issue) => (
-            <li key={issue} className="text-[11px] leading-relaxed text-danger">
-              {issue}
-            </li>
-          ))}
-          {issues.length > ISSUES_SHOWN && (
-            <li className="text-[11px] leading-relaxed text-danger">
-              {t('import.issues.more', { count: issues.length - ISSUES_SHOWN })}
-            </li>
-          )}
-        </ul>
+        <section>
+          <h2 className="mb-2 px-2 text-[13px] font-semibold text-danger">
+            {t('import.count.issues', { count: plan.issues.length })}
+          </h2>
+          <ul className="space-y-1 rounded-card bg-danger/5 px-4 py-3">
+            {shown.map((issue) => (
+              <li key={issue} className="text-[12px] leading-relaxed text-danger">
+                {issue}
+              </li>
+            ))}
+            {issues.length > ISSUES_SHOWN && (
+              <li className="text-[12px] leading-relaxed text-danger">
+                {t('import.issues.more', { count: issues.length - ISSUES_SHOWN })}
+              </li>
+            )}
+          </ul>
+        </section>
       )}
 
       <div className="space-y-1.5 pt-1">
@@ -342,7 +391,7 @@ function Preview({
       </div>
 
       {plan.add.length === 0 && (
-        <p className="text-[11px] leading-relaxed text-fg-muted">{t('import.nothing-new')}</p>
+        <p className="text-[12px] leading-relaxed text-fg-muted">{t('import.nothing-new')}</p>
       )}
     </div>
   );
@@ -356,8 +405,8 @@ function PreviewRow({ draft }: { draft: OtpAuthParams }) {
   const t = useT();
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="truncate text-[12px] text-fg">{labelOf(draft, t)}</span>
-      <span className="shrink-0 font-digit text-[11px] text-fg-muted">
+      <span className="truncate text-[13px] font-medium text-fg">{labelOf(draft, t)}</span>
+      <span className="shrink-0 font-digit text-[11px] tabular-nums text-fg-muted">
         {draft.period === 30
           ? t('draft.meta', { algorithm: draft.algorithm, digits: draft.digits })
           : t('draft.meta.period', {

@@ -109,7 +109,16 @@ export function remainingSeconds(period: number = DEFAULT_PERIOD, now: number = 
   return period - (unixSeconds % period);
 }
 
-/** 把 6/8 位码切成 3+3（8 位切 4+4），仅用于展示 */
+/**
+ * 把 6/8 位码切成 3+3（8 位切 4+4）。
+ *
+ * 展示惯例沿用 Google Authenticator：一串 6 位数分两组读，比一口气读 6 位
+ * 更不容易掉位——银行卡号、电话号码分组是同一个理由（短时记忆按"组块"计价）。
+ * RFC 4226 / 6238 只规定怎么算，不规定怎么显示，所以这是纯粹的产品选择。
+ *
+ * 同一个格式也用在 aria-label 上：`288139` 不加空格，TTS 会当成一个六位数
+ * 念出来（"二十八万八千…"），加了空格才会逐位念。
+ */
 export function formatCode(code: string): string {
   const half = Math.ceil(code.length / 2);
   return `${code.slice(0, half)} ${code.slice(half)}`;

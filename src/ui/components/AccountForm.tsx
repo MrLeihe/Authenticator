@@ -180,8 +180,34 @@ export function AccountForm({
 /**
  * 实时试算。输入密钥的同时这里就在刷新验证码 ——
  * 用户拿它跟手机 App 上的码对一眼，就知道有没有抄错。
+ *
+ * 分两层是因为这个表单**会一直挂着**（加了账户页切到「二维码」时不卸载，
+ * 好让填了一半的密钥活下来）。时钟挂在里面那层，没填密钥时就不起表，
+ * 免得一个看不见的表单在背后每秒算一次 TOTP。
  */
 function CodePreview({
+  secret,
+  algorithm,
+  digits,
+  period,
+}: {
+  secret: string;
+  algorithm: Algorithm;
+  digits: 6 | 8;
+  period: number;
+}) {
+  const t = useT();
+  if (!secret) {
+    return (
+      <p className="rounded-[8px] bg-surface-alt/60 px-3 py-2 text-[11px] text-fg-muted">
+        {t('preview.empty')}
+      </p>
+    );
+  }
+  return <LiveCodePreview secret={secret} algorithm={algorithm} digits={digits} period={period} />;
+}
+
+function LiveCodePreview({
   secret,
   algorithm,
   digits,
@@ -198,10 +224,6 @@ function CodePreview({
 
   useEffect(() => {
     let alive = true;
-    if (!secret) {
-      setState(null);
-      return;
-    }
     let bytes: Uint8Array;
     try {
       bytes = base32Decode(secret);
@@ -222,13 +244,6 @@ function CodePreview({
     };
   }, [secret, algorithm, digits, period, now]);
 
-  if (!secret) {
-    return (
-      <p className="rounded-[8px] bg-surface-alt/60 px-3 py-2 text-[11px] text-fg-muted">
-        {t('preview.empty')}
-      </p>
-    );
-  }
   if (state === 'invalid') {
     return (
       <p className="rounded-[8px] bg-danger/10 px-3 py-2 text-[11px] text-danger">

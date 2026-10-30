@@ -4,11 +4,11 @@ import type { CachedCode } from '@/core/totp-cache';
 import { TotpCache } from '@/core/totp-cache';
 import type { Account } from '@/core/types';
 import { AccountRow } from '../components/AccountRow';
-import { MoonIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon } from '../components/Icons';
-import { Toast } from '../components/Toast';
+import { EmptyGuide } from '../components/EmptyGuide';
+import { PasswordHintBanner } from '../components/PasswordHintBanner';
+import { MoonIcon, KeyIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon } from '../components/Icons';
 import { useTick } from '../hooks/useTick';
 import { useLang, useT } from '../i18n';
-import type { MessageKey } from '../i18n';
 import { useResolvedDark } from '../theme';
 import {
   filterAccounts,
@@ -16,22 +16,16 @@ import {
   useAccounts,
   useAppStore,
   useSettings,
-  type ViewMode,
 } from '../store';
-
-const VIEWS: Array<{ value: ViewMode; label: MessageKey }> = [
-  { value: 'normal', label: 'view.normal' },
-  { value: 'compact', label: 'view.compact' },
-];
 
 export function ListScreen() {
   const t = useT();
   const lang = useLang();
   const accounts = useAccounts();
   const settings = useSettings();
+  const canRecover = useAppStore((s) => s.canRecover);
   const query = useAppStore((s) => s.query);
   const setQuery = useAppStore((s) => s.setQuery);
-  const setView = useAppStore((s) => s.setView);
   const setSettings = useAppStore((s) => s.setSettings);
   const showToast = useAppStore((s) => s.showToast);
   const openSheet = useAppStore((s) => s.openSheet);
@@ -102,79 +96,72 @@ export function ListScreen() {
 
   return (
     <div className="flex min-h-[280px] flex-col bg-bg">
-      <header className="sticky top-0 z-10 bg-bg/95 px-4 pb-2 pt-3 backdrop-blur">
-        <div className="flex items-center gap-1">
-          <h1 className="text-[18px] font-semibold tracking-tight">{t('app.name')}</h1>
+      {/* 底部一根分割线：header 是 sticky + 半透明毛玻璃的，列表往上滚时
+          内容会从它下面"透"过去。毛玻璃本身只够糊掉对比度，糊不掉"这里有一行字"，
+          一条 hairline 才能把标题栏和信息区切开，滚起来也不会糊成一片 */}
+      <header className="sticky top-0 z-10 border-b border-separator bg-bg/95 px-4 pb-2 pt-3 backdrop-blur">
+        <div className="flex items-center gap-2">
+          {/* 图标 + 标题：参考实现的标题栏是有牌面的，
+              一个纯文字标题在 400px 的弹窗里会显得像"页签"而不是"应用" */}
+          <span
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-accent text-white"
+          >
+            <KeyIcon size={16} />
+          </span>
+          <h1 className="text-[17px] font-semibold tracking-tight">{t('app.name')}</h1>
 
-          <div className="ml-auto flex items-center gap-0.5">
-            {/* 添加是这一屏的主要动作，做成实心按钮而不是一排线框图标里的一员 */}
-            <button
-              type="button"
-              aria-label={t('list.add')}
-              title={t('list.add')}
-              className="mr-1 flex h-7 w-7 items-center justify-center rounded-[8px] bg-accent text-white transition-colors duration-150 hover:bg-accent-press"
-              onClick={() => openSheet({ kind: 'add' })}
-            >
-              <PlusIcon size={16} />
-            </button>
+          <div className="ml-auto flex items-center gap-1">
+            {/* 三个都是同样的幽灵按钮：右上角一排里有一个是实心方块时，
+                那一排就永远对不齐视觉重量。强调动作靠颜色（accent）而不是填充 */}
+            <HeaderButton label={t('list.add')} onClick={() => openSheet({ kind: 'add' })} accent>
+              <PlusIcon size={19} />
+            </HeaderButton>
             {/* 画的是"点下去会变成什么"：现在是浅色就画月亮 */}
             <HeaderButton
               label={dark ? t('list.theme-to-light') : t('list.theme-to-dark')}
               onClick={() => switchTheme(dark ? 'light' : 'dark')}
             >
-              {dark ? <SunIcon size={17} /> : <MoonIcon size={17} />}
+              {dark ? <SunIcon size={19} /> : <MoonIcon size={19} />}
             </HeaderButton>
             <HeaderButton
               label={t('settings.title')}
               onClick={() => openSheet({ kind: 'settings' })}
             >
-              <SettingsIcon size={17} />
+              <SettingsIcon size={19} />
             </HeaderButton>
           </div>
         </div>
 
-        {/* 搜索框与视图切换同行：视图只有两档，塞得下，不必再占一行高 */}
-        <div className="mt-2 flex items-center gap-2">
-          <div className="relative flex-1">
+        {/* 搜索框通栏。视图切换（正常/紧凑）挪到设置里 ——
+            它和搜索框挤在同一行时，搜索框只剩 ~250px，
+            而"换个视图"一个月也用不了一次，不值得长期占着首页最好的一块横向空间。
+            一条账户都没有时不画：空列表搜不出东西，那一条横向空间该让给引导区 */}
+        {accounts.length > 0 && (
+          <div className="relative mt-2.5">
             <SearchIcon
-              size={14}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted"
+              size={16}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted"
             />
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('list.search')}
-              className="h-[38px] w-full rounded-[8px] bg-surface-alt pl-8 pr-3 text-[13px] text-fg outline-none placeholder:text-fg-muted focus:ring-2 focus:ring-accent/40"
+              className="h-11 w-full rounded-[14px] bg-surface-alt pl-10 pr-3 text-[15px] text-fg outline-none placeholder:text-fg-muted focus:ring-2 focus:ring-accent/40"
             />
           </div>
-
-          <div
-            className="flex shrink-0 rounded-[8px] bg-surface-alt p-0.5"
-            role="group"
-            aria-label={t('list.view-group')}
-          >
-            {VIEWS.map((v) => (
-              <button
-                key={v.value}
-                type="button"
-                aria-pressed={settings.view === v.value}
-                className={`rounded-[6px] px-2 py-1.5 text-[11px] font-medium transition-colors duration-150 ${
-                  settings.view === v.value
-                    ? 'bg-surface text-fg shadow-sm'
-                    : 'text-fg-muted hover:text-fg'
-                }`}
-                onClick={() => setView(v.value)}
-              >
-                {t(v.label)}
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
       </header>
 
+      {/* 没设密码时提醒一句。已经有账户才提醒 —— 一个还没装任何码的列表，
+          提醒"别人能看到你的验证码"只会让人紧张而不知道在说什么 */}
+      {!canRecover && accounts.length > 0 && <PasswordHintBanner />}
+
       <main
-        className="flex-1"
+        className={`flex-1 ${
+          accounts.length === 0 || settings.style === 'modern' ? 'px-4 pt-2' : 'pt-1.5'
+        }`}
         onDragOver={(event) => {
           if (!dragging) return;
           event.preventDefault();
@@ -188,37 +175,53 @@ export function ListScreen() {
         }}
       >
         {visible.length === 0 ? (
-          <EmptyState searching={query.trim().length > 0} />
+          // 两类"空"必须分开：一条都没有时给分诊引导，搜不到时只解释搜索
+          accounts.length === 0 ? (
+            <EmptyGuide />
+          ) : (
+            <NoMatchState />
+          )
         ) : (
-          visible.map((account) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              code={codes.get(account.id)?.code ?? ''}
-              remaining={remainingOf(account)}
-              view={settings.view}
-              showInitials={settings.showInitials}
-              draggable={manual}
-              dragging={dragging === account.id}
-              dropEdge={
-                over && over.id === account.id && dragging !== account.id
-                  ? over.after
-                    ? 'bottom'
-                    : 'top'
-                  : null
-              }
-              onDragStart={setDragging}
-              onDragEnd={() => {
-                setDragging(null);
-                setOver(null);
-              }}
-              onDrop={drop}
-            />
-          ))
+          /* 列表是一张白卡：灰底 + 白卡是 iOS 分组列表的层次基础。
+             行本身不带底色，hover 时铺一层 row-hover —— 这一档必须比页面底深，
+             否则 hover 行会和弹窗背景撞色，卡片像被咬掉一块。
+             经典版式反过来：不留边距、不切圆角、分隔线通栏，一屏能多读一行 */
+          <div
+            className={
+              settings.style === 'modern'
+                ? 'mb-4 overflow-hidden rounded-card bg-surface'
+                : 'bg-surface [--row-divider-inset:0px]'
+            }
+          >
+            {visible.map((account) => (
+              <AccountRow
+                key={account.id}
+                account={account}
+                code={codes.get(account.id)?.code ?? ''}
+                remaining={remainingOf(account)}
+                view={settings.view}
+                style={settings.style}
+                showInitials={settings.showInitials}
+                draggable={manual}
+                dragging={dragging === account.id}
+                dropEdge={
+                  over && over.id === account.id && dragging !== account.id
+                    ? over.after
+                      ? 'bottom'
+                      : 'top'
+                    : null
+                }
+                onDragStart={setDragging}
+                onDragEnd={() => {
+                  setDragging(null);
+                  setOver(null);
+                }}
+                onDrop={drop}
+              />
+            ))}
+          </div>
         )}
       </main>
-
-      <Toast />
     </div>
   );
 }
@@ -227,10 +230,13 @@ export function ListScreen() {
 function HeaderButton({
   label,
   onClick,
+  accent,
   children,
 }: {
   label: string;
   onClick: () => void;
+  /** 主操作：靠颜色区分，不用填充色破坏这一排的视觉重量 */
+  accent?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -238,7 +244,9 @@ function HeaderButton({
       type="button"
       aria-label={label}
       title={label}
-      className="rounded-[8px] p-1.5 text-fg-muted transition-colors duration-150 hover:bg-surface-alt hover:text-fg"
+      className={`rounded-[8px] p-1.5 transition-colors duration-150 hover:bg-surface-alt ${
+        accent ? 'text-accent hover:text-accent-press' : 'text-fg-muted hover:text-fg'
+      }`}
       onClick={onClick}
     >
       {children}
@@ -246,37 +254,27 @@ function HeaderButton({
   );
 }
 
-/** 空态：必须说清"为什么会这样 + 下一步点哪"，不能只留一片白 */
-function EmptyState({ searching }: { searching: boolean }) {
+/**
+ * 搜不到：只是关键词没命中，和"一条账户都没有"是两件事。
+ * 拿引导页去回答它，等于把"换个词试试"说成"你还没开始"。
+ */
+function NoMatchState() {
   const t = useT();
-  const openSheet = useAppStore((s) => s.openSheet);
+  const setQuery = useAppStore((s) => s.setQuery);
   return (
-    <div className="flex flex-col items-center justify-center px-8 py-14 text-center">
+    <div className="flex flex-col items-center justify-center px-8 py-12 text-center">
       <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-surface-alt">
-        {/* 空列表不是"搜不到"，画放大镜会让人以为哪里筛错了 */}
-        {searching ? (
-          <SearchIcon size={22} className="text-fg-muted" />
-        ) : (
-          <PlusIcon size={22} className="text-fg-muted" />
-        )}
+        <SearchIcon size={22} className="text-fg-muted" />
       </div>
-      <p className="text-[14px] font-medium">
-        {searching ? t('list.no-match.title') : t('list.empty.title')}
-      </p>
-      <p className="mt-1 text-[12px] leading-relaxed text-fg-muted">
-        {searching ? t('list.no-match.body') : t('list.empty.body')}
-      </p>
-      {/* 底部大按钮去掉之后，一个账户都没有时得有个一眼能点的入口 */}
-      {searching ? null : (
-        <button
-          type="button"
-          className="mt-4 flex items-center gap-1.5 rounded-[10px] bg-accent px-4 py-2 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-press"
-          onClick={() => openSheet({ kind: 'add' })}
-        >
-          <PlusIcon size={15} />
-          {t('list.add')}
-        </button>
-      )}
+      <p className="text-[14px] font-medium">{t('list.no-match.title')}</p>
+      <p className="mt-1 text-[12px] leading-relaxed text-fg-muted">{t('list.no-match.body')}</p>
+      <button
+        type="button"
+        className="mt-4 rounded-[10px] bg-surface px-4 py-2 text-[13px] font-medium text-accent transition-colors duration-150 hover:bg-row-hover"
+        onClick={() => setQuery('')}
+      >
+        {t('list.no-match.clear')}
+      </button>
     </div>
   );
 }

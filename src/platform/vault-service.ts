@@ -18,7 +18,7 @@ import {
   wrapDek,
 } from '@/core/crypto';
 import type { DekWrap, SealedBlob } from '@/core/crypto';
-import type { Vault } from '@/core/types';
+import type { Account, Vault } from '@/core/types';
 import { VAULT_VERSION, emptyVault, normalizeVault } from '@/core/vault';
 import { KEYS, backupKey, local, session } from './storage';
 
@@ -341,6 +341,114 @@ export function today(): string {
 
 export const MAX_BACKUPS = 7;
 
+/** 快照的存储前缀。只在本模块出现，别处一律走 `backupKey()` */
+const BACKUP_PREFIX = '2fa:backup:';
+
+async function snapshotKeys(): Promise<string[]> {
+  return (await local.keys()).filter((key) => key.startsWith(BACKUP_PREFIX)).sort();
+}
+
+/** 解一份快照。解不开就返回 null —— 换过 DEK 之后旧快照本来就是废的，不该让界面报错 */
+async function readSnapshot(key: string): Promise<Vault | null> {
+  const blob = await local.get<SealedBlob>(key);
+  if (!blob) return null;
+  try {
+    const raw = await decryptJson<unknown>(requireDek(), blob);
+    return normalizeVault(raw).vault;
+  } catch {
+    return null;
+  }
+}
+
+/** 判重身份：同一个服务上的同一个账号，换个 id 也还是同一条。
+ *  口径与 `backup.ts` 的 `labelKey` 保持一致：trim + 小写，避免「Google」和
+ *  「google」被当成两条。分隔符用 `\0`，因为 issuer/account 里不会出现它。 */
+const identityOf = (account: Account): string =>
+  `${account.issuer.trim().toLowerCase()}\u0000${account.account.trim().toLowerCase()}`;
+
+export interface BackupSnapshot {
+  /** `YYYY-MM-DD` */
+  date: string;
+  /** 这份快照里有多少个账户 */
+  accounts: number;
+}
+
+/**
+ * 备份的概要：几份、最新是哪天。
+ *
+ * 只数 key、不解密 —— 设置页要的只是"备份在写"这个事实，为一句
+ * 「已存 N 份」把 7 份快照全解开（每份都跑一遍 PBKDF2）纯属浪费。
+ * 解不开的旧快照（换过 DEK）照常计数：它还在，只是这次读不动。
+ */
+export async function backupStatus(): Promise<{ count: number; latest: string | null }> {
+  const keys = await snapshotKeys();
+  if (keys.length === 0) return { count: 0, latest: null };
+  const latest = keys[keys.length - 1]!.slice(BACKUP_PREFIX.length);
+  return { count: keys.length, latest };
+}
+
+/**
+ * 最近一份**非空**备份。
+ *
+ * 只在空态（列表里一条都没有）用到：横幅要说的是"本机还有你的账户躺着"，
+ * 这时候只解最新一份就够 —— 为了一个数字把 7 份全解开，代价和收益不成比例。
+ * 最新的那份恰好是空的（用户删空之后又改过一次设置），就往前退一份。
+ */
+export async function latestBackup(): Promise<BackupSnapshot | null> {
+  if (!cached) return null;
+  const keys = await snapshotKeys();
+  for (let index = keys.length - 1; index >= 0; index -= 1) {
+    const key = keys[index]!;
+    const vault = await readSnapshot(key);
+    if (vault && vault.accounts.length > 0) {
+      return { date: key.slice(BACKUP_PREFIX.length), accounts: vault.accounts.length };
+    }
+  }
+  return null;
+}
+
+/**
+ * 把最近一份非空备份里缺的账户补回来。
+ *
+ * 只做加法，按 `issuer + account` 判重，已有的一条都不动 ——
+ * 恢复发生在"我把东西弄丢了"之后，任何覆盖都会把一次事故变成两次。
+ * 成功时返回新的 vault，调用方直接拿去替换内存里的状态；
+ * 备份里没有可补的（null）就什么都不发生。
+ *
+ * 边界（刻意不做）：快照恢复**不覆盖「彻底删除」**。「彻底删除」是用户主动、
+ * 明确的永久动作，快照恢复只救「误删」，不去复活一个被主动抹掉的东西。
+ * 软删账户（还在「最近删除」里）也不在这里补 —— 它没真丢，去回收站捞即可。
+ */
+export async function restoreLatestBackup(): Promise<{
+  vault: Vault;
+  added: number;
+  date: string;
+} | null> {
+  if (!cached) return null;
+  const dek = cached.dek;
+  const current = await decryptVault(dek);
+  const keys = await snapshotKeys();
+
+  for (let index = keys.length - 1; index >= 0; index -= 1) {
+    const key = keys[index]!;
+    const backup = await readSnapshot(key);
+    if (!backup || backup.accounts.length === 0) continue;
+
+    const seen = new Set(current.accounts.map(identityOf));
+    // 软删的账户还在「最近删除」里，不算真丢 —— 把它们也纳入判重，
+    // 否则从备份恢复会把躺在回收站的账户又补回列表，造成同一密钥
+    // 同时出现在列表和回收站里，违背软删除的不变量
+    for (const trashed of current.trash) seen.add(identityOf(trashed));
+    const missing = backup.accounts.filter((account) => !seen.has(identityOf(account)));
+    if (missing.length === 0) continue;
+
+    const next: Vault = { ...current, accounts: [...current.accounts, ...missing] };
+    await local.set(KEYS.vault, await encryptJson(dek, next));
+    return { vault: next, added: missing.length, date: key.slice(BACKUP_PREFIX.length) };
+  }
+  return null;
+}
+
 /**
  * 每天第一次改动时留一份备份，最多留 7 份。
  * 备份用同一个 DEK 加密：密钥丢了备份也打不开，但密钥本身有恢复码兜底。
@@ -360,7 +468,7 @@ export async function maybeBackup(vault: Vault): Promise<boolean> {
   await local.set(KEYS.meta, { ...meta, lastBackupDate: date });
 
   // 只留最近 7 份，按日期字符串排序（YYYY-MM-DD 可直接比大小）
-  const all = (await local.keys()).filter((key) => key.startsWith('2fa:backup:')).sort();
+  const all = await snapshotKeys();
   for (const stale of all.slice(0, Math.max(0, all.length - MAX_BACKUPS))) {
     await local.remove(stale);
   }
@@ -375,6 +483,6 @@ export async function resetAll(): Promise<void> {
   await local.remove(KEYS.dekWrapRecovery);
   await local.remove(KEYS.meta);
   for (const key of await local.keys()) {
-    if (key.startsWith('2fa:backup:')) await local.remove(key);
+    if (key.startsWith(BACKUP_PREFIX)) await local.remove(key);
   }
 }

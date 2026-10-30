@@ -117,6 +117,70 @@ export function KeyIcon(props: IconProps) {
   );
 }
 
+/** 屏幕：空态里"网站正显示二维码"那一路，也用在「扫描当前页面」上 */
+export function ScreenIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4.5" width="18" height="12" rx="2" />
+      <path d="M9 20h6M12 16.5V20" />
+    </Svg>
+  );
+}
+
+/** 手机：空态里「手机上已经有验证器」那一路 */
+export function PhoneIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="7" y="2.5" width="10" height="19" rx="2.5" />
+      <path d="M11 18.5h2" />
+    </Svg>
+  );
+}
+
+/** 二维码：空态第一张卡（「我正在开启两步验证」，进去是步骤页）。
+ *  三个角是回字框，右下角留成散点 —— 画满四个回字在 16px 下会糊成一团黑 */
+export function QrCodeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="3.5" width="6" height="6" rx="1.4" />
+      <rect x="14.5" y="3.5" width="6" height="6" rx="1.4" />
+      <rect x="3.5" y="14.5" width="6" height="6" rx="1.4" />
+      <path d="M14.5 14.5h2.5v2.5M20.5 14.5v.01M14.5 20.5h.01M19 20.5h1.5" />
+    </Svg>
+  );
+}
+
+/** 双向箭头：空态第四张卡（在别的应用或备份文件里）。
+ *  这个动作是"搬过来"，不是"打开" —— 所以画转移而不是归档 */
+export function TransferIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 9h14M14.5 5.5 18 9l-3.5 3.5" />
+      <path d="M20 15H6M9.5 11.5 6 15l3.5 3.5" />
+    </Svg>
+  );
+}
+
+/** 右尖角：卡片是"点进去还有一层"的，没有它就只是一块白底 */
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 5l7 7-7 7" />
+    </Svg>
+  );
+}
+
+/** 归档：备份快照用的那一枚 */
+export function ArchiveIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4.5" width="18" height="4" rx="1.5" />
+      <path d="M5 8.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V8.5" />
+      <path d="M10 12.5h4" />
+    </Svg>
+  );
+}
+
 export function EyeIcon(props: IconProps) {
   return (
     <Svg {...props}>

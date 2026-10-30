@@ -6,6 +6,7 @@ import type { PasswordIssue } from '@/core/crypto';
 import type { Diagnostic } from '@/core/diagnostics';
 import { MigrationError } from '@/core/migration';
 import { OtpAuthError } from '@/core/otpauth';
+import { CaptureError } from '@/platform/capture';
 import { QrError } from '@/platform/qr';
 import { useT } from './i18n';
 import type { MessageKey, Vars } from './i18n';
@@ -93,6 +94,12 @@ export function describeError(cause: unknown, scene: ErrorScene = 'general'): Me
 
   if (cause instanceof QrError) {
     return { key: cause.reason === 'not-image' ? 'error.qr-not-image' : 'error.qr-no-code' };
+  }
+
+  if (cause instanceof CaptureError) {
+    return {
+      key: cause.reason === 'blocked' ? 'error.capture-blocked' : 'error.capture-unavailable',
+    };
   }
 
   if (scene === 'import') return { key: 'import.error.generic' };

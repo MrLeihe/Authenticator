@@ -24,23 +24,25 @@ interface InitialsProps {
 }
 
 /**
- * 首字方块。
+ * 首字头像。
  *
- * 尺寸刻意压得比账户名那一行小一点：它是**索引标记**，不是主角。
- * 之前 28px / 字号半个方块，汉字在这种等比缩放下会顶满格子，看起来又大又笨；
- * 24px + 0.44 倍字号，字在格子里有留白，视线才不会先被方块吸走。
+ * 圆形而不是圆角方块：方形头像在列表里会形成一排"色块矩阵"，
+ * 视觉重量比账户名还大；圆形更接近 iOS 通讯录，也更容易和右侧的圆环呼应。
+ *
+ * 尺寸 26px 对齐参考实现的实测值；字号取 0.46 倍 —— 比方块时期略大，
+ * 因为圆形比方形的可用内切区域小，同样的字会显得偏小。
  */
-export function Initials({ issuer, account, size = 24 }: InitialsProps) {
+export function Initials({ issuer, account, size = 26 }: InitialsProps) {
   const text = initialOf(issuer, account);
   const index = (hash(issuer || account) % PALETTE_SIZE) + 1;
 
   return (
     <div
-      className="flex shrink-0 select-none items-center justify-center rounded-[7px] font-semibold text-white"
+      className="flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-white"
       style={{
         width: size,
         height: size,
-        fontSize: Math.round(size * 0.44),
+        fontSize: Math.round(size * 0.46),
         // 色值只在 globals.css 里定义，这里只引用变量
         backgroundColor: `rgb(var(--avatar-${index}))`,
       }}

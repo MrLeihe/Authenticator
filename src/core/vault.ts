@@ -105,6 +105,9 @@ function normalizeAccount(raw: unknown, index: number, notes: RepairNote[]): Acc
     pinned: raw.pinned === true,
     groupId: typeof raw.groupId === 'string' ? raw.groupId : null,
     createdAt: asNumber(raw.createdAt, Date.now()),
+    ...(typeof raw.archivedAt === 'number' && Number.isFinite(raw.archivedAt)
+      ? { archivedAt: raw.archivedAt }
+      : {}),
   };
 }
 
@@ -126,10 +129,9 @@ const ENUMS: Partial<Record<keyof Settings, readonly string[]>> = {
   theme: ['system', 'light', 'dark'],
   language: ['system', 'zh', 'en'],
   sortBy: ['manual', 'issuer', 'name'],
+  style: ['classic', 'modern'],
   // 曾有过 'masked'（打码视图），已移除：旧数据里的这个值会落回默认的 normal
   view: ['normal', 'compact'],
-  openMode: ['popup', 'window', 'sidepanel'],
-  popupSize: ['sm', 'md', 'lg'],
 };
 
 function isAllowedValue(key: keyof Settings, value: unknown): boolean {
@@ -195,25 +197,43 @@ export function normalizeVault(raw: unknown): NormalizeResult {
     accounts.push(account);
   }
 
+  // 「最近删除」：老数据没有这个字段，补空数组。trash 里的账户同样要归一化
+  const trashRaw = Array.isArray(raw.trash) ? raw.trash : [];
+  const trash: Account[] = [];
+  for (const [index, item] of trashRaw.entries()) {
+    const account = normalizeAccount(item, index, notes);
+    if (!account) continue;
+    // trash 与 accounts 之间也要防 id 撞车
+    if (seenIds.has(account.id)) {
+      account.id = newId();
+      notes.push({ code: 'duplicate-id' });
+    }
+    seenIds.add(account.id);
+    trash.push(account);
+  }
+
   const groupsRaw = Array.isArray(raw.groups) ? raw.groups : [];
   const groups = groupsRaw
     .map((item, index) => normalizeGroup(item, index))
     .filter((group): group is Group => group !== null);
 
-  // groupId 指向不存在的分组时清空，避免"幽灵分组"
+  // groupId 指向不存在的分组时清空，避免"幽灵分组"。accounts 和 trash 都要清
   const groupIds = new Set(groups.map((g) => g.id));
   for (const account of accounts) {
     if (account.groupId && !groupIds.has(account.groupId)) account.groupId = null;
   }
+  for (const account of trash) {
+    if (account.groupId && !groupIds.has(account.groupId)) account.groupId = null;
+  }
 
   return {
-    vault: { version: VAULT_VERSION, accounts, groups, settings: normalizeSettings(raw.settings, notes) },
+    vault: { version: VAULT_VERSION, accounts, trash, groups, settings: normalizeSettings(raw.settings, notes) },
     notes,
   };
 }
 
 export function emptyVault(): Vault {
-  return { version: VAULT_VERSION, accounts: [], groups: [], settings: { ...DEFAULT_SETTINGS } };
+  return { version: VAULT_VERSION, accounts: [], trash: [], groups: [], settings: { ...DEFAULT_SETTINGS } };
 }
 
 // ---------------------------------------------------------------- 账户增删改（纯函数）
@@ -277,8 +297,67 @@ export function updateAccount(
   return { ...vault, accounts };
 }
 
+/**
+ * 软删除：把账户从 `accounts` 移进 `trash`，记下删除时间。
+ *
+ * 不真删。删除后 30 天内可以在「最近删除」里恢复，过期后被惰性清理。
+ * 这是对「误删」这个场景的真正兜底 —— 快照按天留，误删按秒发生，
+ * 只有可逆的删除才追得上用户的后悔速度。
+ */
 export function removeAccount(vault: Vault, id: string): Vault {
-  return { ...vault, accounts: vault.accounts.filter((account) => account.id !== id) };
+  const target = vault.accounts.find((account) => account.id === id);
+  if (!target) return vault;
+  const archived: Account = { ...target, archivedAt: Date.now() };
+  return {
+    ...vault,
+    accounts: vault.accounts.filter((account) => account.id !== id),
+    trash: [...vault.trash, archived],
+  };
+}
+
+/**
+ * 从「最近删除」恢复：移回 `accounts`，去掉 `archivedAt`。
+ *
+ * 判重沿用导入那一套（`issuer + account`）：同名账户还在列表里时，
+ * 恢复会造成重名。这里只做**名**一级的提醒，不拦 —— 密钥相同说明
+ * 是同一凭据（应当拦），但软删除与活跃列表不会同时存在同一密钥，
+ * 所以这里不按密钥去重，交给界面用同名提示兜底。
+ */
+export function restoreTrashed(vault: Vault, id: string): Vault {
+  const target = vault.trash.find((account) => account.id === id);
+  if (!target) throw new VaultError('malformed', 'trashed account not found');
+  const { archivedAt: _archivedAt, ...account } = target;
+  // 不能原样沿用旧 order：删除后若又新增过账户，`nextOrder` 可能已经复用了
+  // 这个 order，恢复回来会造成两个账户共用同一排序键，位置取决于 sort 的
+  // 稳定性。恢复时重新排到末尾（pinned 依旧优先于 order，不受影响）。
+  return {
+    ...vault,
+    accounts: [...vault.accounts, { ...account, order: nextOrder(vault.accounts) }],
+    trash: vault.trash.filter((item) => item.id !== id),
+  };
+}
+
+/** 彻底删除：从「最近删除」里移除，这一步才真正消失。 */
+export function purgeTrashed(vault: Vault, id: string): Vault {
+  return { ...vault, trash: vault.trash.filter((account) => account.id !== id) };
+}
+
+/** 「最近删除」保留天数。和 iOS 相册对齐，用户有熟悉的预期。 */
+export const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 惰性清理：把超过保留期的账户从「最近删除」里真正移除。
+ *
+ * MV3 的 service worker 会被休眠，没法保证定时器准点触发，所以清理挂在
+ * 「打开扩展」这一下上 —— 每次冷启动检查一次，过期就删，不依赖后台。
+ * 返回是否真的删掉过东西，让调用方决定要不要顺手再落一次盘。
+ */
+export function expireTrash(vault: Vault, now: number = Date.now()): Vault {
+  const trash = vault.trash.filter(
+    (account) => !account.archivedAt || now - account.archivedAt < TRASH_RETENTION_MS,
+  );
+  if (trash.length === vault.trash.length) return vault;
+  return { ...vault, trash };
 }
 
 /** 新账户排在最后：取最大 order 再加一个间隔 */
