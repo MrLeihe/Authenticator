@@ -1,11 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { CryptoError } from '@/core/crypto';
 import { PasswordInput } from '../components/PasswordInput';
 import { PrimaryButton, TextButton } from '../components/Button';
 import { SetPasswordForm } from '../components/SetPasswordForm';
 import { KeyIcon, LockIcon } from '../components/Icons';
-import { useErrorText } from '../errors';
+import { describeError, useMessage } from '../errors';
+import type { Message } from '../errors';
 import { useT } from '../i18n';
 import { useAppStore } from '../store';
+
+/** 连续输错 5 次后锁 60 秒。纯客户端挡不住有存储权限的人，只是让手输猜密码变慢 */
+const MAX_FAILURES = 5;
+const LOCKOUT_SECONDS = 60;
+const LOCKOUT_MS = LOCKOUT_SECONDS * 1000;
 
 /**
  * 解锁页。两条路：密码、恢复码。
@@ -15,7 +22,7 @@ import { useAppStore } from '../store';
  */
 export function LockScreen() {
   const t = useT();
-  const errorText = useErrorText();
+  const message = useMessage();
   const canRecover = useAppStore((s) => s.canRecover);
   const notice = useAppStore((s) => s.notice);
   const unlock = useAppStore((s) => s.unlockWithPassword);
@@ -24,18 +31,60 @@ export function LockScreen() {
   const [mode, setMode] = useState<'password' | 'recovery'>('password');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
+  const [failures, setFailures] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState(0);
+  const passwordBoxRef = useRef<HTMLDivElement>(null);
+  const locked = lockedUntil !== null;
+
+  // 锁定倒计时。每 500ms 刷一次，界面上的秒数不会跳格
+  useEffect(() => {
+    if (lockedUntil === null) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000));
+      setRemaining(left);
+      if (left === 0) {
+        setLockedUntil(null);
+        setFailures(0);
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 500);
+    return () => clearInterval(timer);
+  }, [lockedUntil]);
+
+  // 先摘类再强制重排，同一段动画才能连续重播；减少动效偏好由全局 CSS 关掉
+  const shakePassword = () => {
+    const node = passwordBoxRef.current;
+    if (!node) return;
+    node.classList.remove('animate-shake');
+    void node.offsetWidth;
+    node.classList.add('animate-shake');
+  };
 
   const submitPassword = async () => {
-    if (busy || password.length === 0) return;
+    if (busy || locked || password.length === 0) return;
     setBusy(true);
     setError(null);
     try {
       await unlock(password);
     } catch (cause) {
-      setError(errorText(cause));
+      setError(describeError(cause));
       setPassword('');
+      // 只有"密码不对"才计入锁定；存储损坏之类的错误不该锁住用户
+      if (cause instanceof CryptoError && cause.reason === 'wrong-key') {
+        const next = failures + 1;
+        if (next >= MAX_FAILURES) {
+          setFailures(0);
+          setRemaining(LOCKOUT_SECONDS);
+          setLockedUntil(Date.now() + LOCKOUT_MS);
+        } else {
+          setFailures(next);
+        }
+        shakePassword();
+      }
     } finally {
       setBusy(false);
     }
@@ -63,18 +112,25 @@ export function LockScreen() {
       <div className="mt-5">
         {mode === 'password' ? (
           <>
-            <PasswordInput
-              label={t('lock.password')}
-              value={password}
-              onChange={setPassword}
-              autoFocus
-              disabled={busy}
-              error={error}
-              onEnter={() => void submitPassword()}
-            />
+            <div ref={passwordBoxRef}>
+              <PasswordInput
+                label={t('lock.password')}
+                value={password}
+                onChange={setPassword}
+                autoFocus
+                disabled={busy || locked}
+                error={error ? message(error) : null}
+                onEnter={() => void submitPassword()}
+              />
+            </div>
+            {locked && (
+              <p className="mt-2 text-[11px] leading-relaxed text-warn" role="alert">
+                {t('lock.locked', { seconds: remaining })}
+              </p>
+            )}
             <PrimaryButton
               className="mt-3"
-              disabled={busy || password.length === 0}
+              disabled={busy || locked || password.length === 0}
               onClick={() => void submitPassword()}
             >
               {busy ? t('lock.unlocking') : t('lock.unlock')}
