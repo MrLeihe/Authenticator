@@ -9,9 +9,10 @@ interface CountdownProps {
   showNumber?: boolean;
 }
 
-const DEFAULT_SIZE = 24;
-/** 描边按尺寸等比缩，24px 下是 2.5px；固定值会让小环显得像粗黑圈 */
-const strokeFor = (size: number) => Math.max(1.4, (size * 2.5) / DEFAULT_SIZE);
+/** 正常模式 28px：一行里除了验证码就数它显眼，24px 在 2 倍屏上细得看不见 */
+const DEFAULT_SIZE = 28;
+/** 描边按尺寸等比缩，28px 下是 2.6px；固定值会让小环显得像粗黑圈 */
+const strokeFor = (size: number) => Math.max(1.4, (size * 2.6) / DEFAULT_SIZE);
 
 /**
  * 环形倒计时。
@@ -66,10 +67,11 @@ export function Countdown({
           }`}
         />
       </svg>
+      {/* 数字和环同色：深色主题下 fg-muted 太暗，两位数几乎看不清 */}
       {showNumber && (
         <span
-          className={`tnum absolute inset-0 flex items-center justify-center text-[9px] font-medium ${
-            urgent ? 'text-warn' : 'text-fg-muted'
+          className={`tnum absolute inset-0 flex items-center justify-center text-[10px] font-medium leading-none ${
+            urgent ? 'text-warn' : 'text-code'
           }`}
         >
           {remaining}

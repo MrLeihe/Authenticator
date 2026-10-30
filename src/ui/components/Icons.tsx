@@ -167,6 +167,25 @@ export function GripIcon(props: IconProps) {
   );
 }
 
+/** 太阳：当前是深色，点一下切到浅色 */
+export function SunIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+    </Svg>
+  );
+}
+
+/** 月亮：当前是浅色，点一下切到深色 */
+export function MoonIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+    </Svg>
+  );
+}
+
 /** 图钉。`filled` 表示这一行当前是置顶状态 */
 export function PinIcon({ filled, ...props }: IconProps & { filled?: boolean }) {
   return (

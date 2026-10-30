@@ -23,17 +23,24 @@ interface InitialsProps {
   size?: number;
 }
 
-export function Initials({ issuer, account, size = 28 }: InitialsProps) {
+/**
+ * 首字方块。
+ *
+ * 尺寸刻意压得比账户名那一行小一点：它是**索引标记**，不是主角。
+ * 之前 28px / 字号半个方块，汉字在这种等比缩放下会顶满格子，看起来又大又笨；
+ * 24px + 0.44 倍字号，字在格子里有留白，视线才不会先被方块吸走。
+ */
+export function Initials({ issuer, account, size = 24 }: InitialsProps) {
   const text = initialOf(issuer, account);
   const index = (hash(issuer || account) % PALETTE_SIZE) + 1;
 
   return (
     <div
-      className="flex shrink-0 select-none items-center justify-center rounded-[8px] font-semibold text-white"
+      className="flex shrink-0 select-none items-center justify-center rounded-[7px] font-semibold text-white"
       style={{
         width: size,
         height: size,
-        fontSize: size * 0.5,
+        fontSize: Math.round(size * 0.44),
         // 色值只在 globals.css 里定义，这里只引用变量
         backgroundColor: `rgb(var(--avatar-${index}))`,
       }}

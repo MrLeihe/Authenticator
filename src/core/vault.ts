@@ -126,7 +126,8 @@ const ENUMS: Partial<Record<keyof Settings, readonly string[]>> = {
   theme: ['system', 'light', 'dark'],
   language: ['system', 'zh', 'en'],
   sortBy: ['manual', 'issuer', 'name'],
-  view: ['normal', 'compact', 'masked'],
+  // 曾有过 'masked'（打码视图），已移除：旧数据里的这个值会落回默认的 normal
+  view: ['normal', 'compact'],
   openMode: ['popup', 'window', 'sidepanel'],
   popupSize: ['sm', 'md', 'lg'],
 };

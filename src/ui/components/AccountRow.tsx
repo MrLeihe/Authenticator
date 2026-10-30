@@ -17,9 +17,6 @@ interface AccountRowProps {
   remaining: number;
   view: ViewMode;
   showInitials: boolean;
-  /** 打码模式下正在临时揭示的行 */
-  revealed: boolean;
-  onReveal: (id: string | null) => void;
   /** 只有「手动排序 + 没在搜索」时才能拖，否则拖完位置会被排序覆盖 */
   draggable: boolean;
   dragging: boolean;
@@ -31,11 +28,10 @@ interface AccountRowProps {
 }
 
 /**
- * 账户行。正常/打码 92px 两行，紧凑 44px 单行。
+ * 账户行。正常 92px 两行，紧凑 44px 单行。
  *
- * 整行点击 = 复制；打码态整行点击 = 先揭示（5 秒后由 store 自动收回）。
- * 右侧的置顶/编辑/删除是真按钮，所以外层不能用 <button>（嵌套按钮非法），
- * 改 role="button" + 键盘处理。
+ * 整行点击 = 复制验证码。右侧的置顶/编辑/删除是真按钮，
+ * 所以外层不能用 <button>（嵌套按钮非法），改 role="button" + 键盘处理。
  */
 export const AccountRow = memo(function AccountRow({
   account,
@@ -43,8 +39,6 @@ export const AccountRow = memo(function AccountRow({
   remaining,
   view,
   showInitials,
-  revealed,
-  onReveal,
   draggable,
   dragging,
   dropEdge,
@@ -58,12 +52,10 @@ export const AccountRow = memo(function AccountRow({
   const togglePin = useAppStore((s) => s.togglePin);
   const clearSeconds = useSettings().clipboardClearSeconds;
   const compact = view === 'compact';
-  const masked = view === 'masked' && !revealed;
   const invalid = code === '';
-  // 打码/无效时不跟着倒计时变橙：橙色的含义是"这串码快过期了"，
+  // 无效时不跟着倒计时变橙：橙色的含义是"这串码快过期了"，
   // 而当码根本没显示时，这个提示只会让人以为出了问题
-  const hidden = masked || invalid;
-  const urgent = !hidden && remaining <= WARN_AT;
+  const urgent = !invalid && remaining <= WARN_AT;
 
   const copy = useCallback(async () => {
     if (invalid) {
@@ -80,12 +72,8 @@ export const AccountRow = memo(function AccountRow({
   }, [code, invalid, clearSeconds, showToast]);
 
   const activate = useCallback(() => {
-    if (masked) {
-      onReveal(account.id);
-      return;
-    }
     void copy();
-  }, [masked, onReveal, account.id, copy]);
+  }, [copy]);
 
   /**
    * 验证码翻页时播报一句。
@@ -100,14 +88,13 @@ export const AccountRow = memo(function AccountRow({
   useEffect(() => {
     if (previousCode.current === code) return;
     previousCode.current = code;
-    if (masked) return;
     if (!row.current?.contains(document.activeElement)) return;
     // aria-live 只在文字"变了"的时候才开口。同一句话每 30 秒要说一次，
     // 直接写同样的字符串读屏会当成没变化，所以先清空、下一拍再补上
     setAnnouncement('');
     const timer = setTimeout(() => setAnnouncement(t('row.code-refreshed')), 60);
     return () => clearTimeout(timer);
-  }, [code, masked, t]);
+  }, [code, t]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -137,8 +124,8 @@ export const AccountRow = memo(function AccountRow({
   const title = account.account
     ? t('name.with-issuer', { issuer: account.issuer, account: account.account })
     : account.issuer;
-  const display = masked ? '••• •••' : invalid ? '———' : formatCode(code);
-  const codeClass = hidden ? 'text-fg-muted' : urgent ? 'text-warn' : 'text-code';
+  const display = invalid ? '———' : formatCode(code);
+  const codeClass = invalid ? 'text-fg-muted' : urgent ? 'text-warn' : 'text-code';
 
   const pinnedMark = account.pinned && (
     <PinIcon size={11} filled className="shrink-0 text-accent" />
@@ -190,9 +177,7 @@ export const AccountRow = memo(function AccountRow({
       aria-label={
         invalid
           ? t('row.aria.invalid', { name: title })
-          : masked
-            ? t('row.aria.masked', { name: title })
-            : t('row.aria.copy', { name: title, code: formatCode(code) })
+          : t('row.aria.copy', { name: title, code: formatCode(code) })
       }
       onClick={activate}
       onKeyDown={onKeyDown}
@@ -233,16 +218,18 @@ export const AccountRow = memo(function AccountRow({
             remaining={remaining}
             period={account.period}
             warnAt={WARN_AT}
-            size={18}
+            size={20}
             showNumber={false}
           />
         </div>
       ) : (
         <div className="flex h-full w-full flex-col justify-center gap-1 px-4 py-3 transition-colors duration-150 group-hover:bg-surface-alt/60">
-          {/* 第一行：拖拽把手 + 首字母 + 账户名 + hover 图标 */}
+          {/* 第一行：首字母 + 账户名 + 拖拽把手 + hover 图标 */}
           <div className="flex min-w-0 items-center gap-2.5">
-            {/* 拖拽把手只画在能拖的时候，但两种状态占同样宽度：
-                切换排序方式时整列文字不会左右跳一下 */}
+            {showInitials && <Initials issuer={account.issuer} account={account.account} />}
+            <span className="truncate text-[14px] font-medium text-fg">{title}</span>
+            {/* 把手跟在文字后面：它收拾的是"这一行"，先看到是谁再看怎么挪。
+                只画在能拖的时候，但两种状态占同样宽度 —— 切换排序方式时整列文字不会左右跳一下 */}
             {draggable ? (
               <GripIcon
                 size={14}
@@ -251,25 +238,25 @@ export const AccountRow = memo(function AccountRow({
             ) : (
               <span aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             )}
-            {showInitials && <Initials issuer={account.issuer} account={account.account} />}
-            <span className="truncate text-[14px] font-medium text-fg">{title}</span>
             {pinnedMark}
             {actions}
           </div>
 
-          {/* 第二行：验证码 + 复制图标 + 倒计时环 */}
-          <div className="flex items-end justify-between">
-            <span className={`code transition-colors duration-200 ${codeClass}`} dir="ltr">
-              {display}
-            </span>
-
-            <div className="flex items-center gap-2.5 pb-0.5">
+          {/* 第二行：验证码 + 复制图标 …… 倒计时环 */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className={`code transition-colors duration-200 ${codeClass}`} dir="ltr">
+                {display}
+              </span>
+              {/* 复制图标紧贴验证码：它动作的对象就是这串码。
+                  放到行尾会让人以为最右边那个圆环才是复制按钮 */}
               <CopyIcon
-                size={14}
-                className="text-fg-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                size={16}
+                className="shrink-0 text-fg-muted/70 transition-colors duration-150 group-hover:text-fg"
               />
-              <Countdown remaining={remaining} period={account.period} warnAt={WARN_AT} />
             </div>
+
+            <Countdown remaining={remaining} period={account.period} warnAt={WARN_AT} />
           </div>
         </div>
       )}

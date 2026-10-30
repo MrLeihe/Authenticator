@@ -1,4 +1,29 @@
+import { useEffect, useState } from 'react';
+
 export type ThemeMode = 'system' | 'light' | 'dark';
+
+/**
+ * 当前**实际**是深色还是浅色。
+ *
+ * 顶部的主题按钮要画「点下去会变成什么」，而不是「设置里存的是什么」：
+ * 存的是 `system` 时，用户看到的是浅色，按钮就该显示月亮。
+ */
+export function useResolvedDark(mode: ThemeMode): boolean {
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+
+  useEffect(() => {
+    if (mode !== 'system') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const sync = () => setSystemDark(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, [mode]);
+
+  return mode === 'dark' || (mode === 'system' && systemDark);
+}
 
 /**
  * 把主题落到 <html class="dark">。

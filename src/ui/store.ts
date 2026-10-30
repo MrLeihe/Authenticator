@@ -28,7 +28,7 @@ import { DEMO_ACCOUNTS } from './fixtures/demo';
 // 保证这行被整句擦掉，编译产物里不会留下 require。
 import type { MessageKey, Vars } from './i18n';
 
-export type ViewMode = 'normal' | 'compact' | 'masked';
+export type ViewMode = 'normal' | 'compact';
 
 /** 顶层路由只看这一个状态 */
 export type Phase = 'loading' | 'empty' | 'locked' | 'unlocked';
@@ -86,8 +86,6 @@ interface AppState {
 
   query: string;
   toast: Toast | null;
-  /** 打码模式下临时揭示的那一行 */
-  revealedId: string | null;
   /** 当前打开的整屏子界面；null 表示在列表上 */
   sheet: Sheet | null;
 
@@ -131,16 +129,11 @@ interface AppState {
 
   setQuery: (query: string) => void;
   setView: (view: ViewMode) => void;
-  reveal: (id: string | null) => void;
   showToast: (message: MessageKey, options?: ToastOptions) => void;
   dismissToast: (id: number) => void;
 }
 
 let toastSeq = 0;
-let revealTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** 打码模式下临时揭示后自动收回的时长 */
-export const REVEAL_MS = 5000;
 
 /**
  * 没有保险库时返回的稳定空值。
@@ -156,7 +149,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingRecovery: null,
   query: '',
   toast: null,
-  revealedId: null,
   sheet: null,
 
   hydrate: async () => {
@@ -305,8 +297,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteAccount: async (id) => {
     await get().mutate((vault) => removeAccountFromVault(vault, id));
-    // 删掉的正好是临时揭示的那一行时，别留一个指向空行的状态
-    set((state) => ({ sheet: null, revealedId: state.revealedId === id ? null : state.revealedId }));
+    set({ sheet: null });
     get().showToast('toast.deleted');
   },
 
@@ -348,22 +339,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setQuery: (query) => set({ query }),
   setView: (view) => {
     void get().setSettings({ view });
-  },
-
-  // 自动收回放在 store 里，不放在行组件里：谁触发揭示都只有这一个定时器，
-  // 也就不会出现"组件卸载后仍残留一个 5 秒回调"的情况
-  reveal: (revealedId) => {
-    if (revealTimer !== null) {
-      clearTimeout(revealTimer);
-      revealTimer = null;
-    }
-    set({ revealedId });
-    if (revealedId !== null) {
-      revealTimer = setTimeout(() => {
-        revealTimer = null;
-        set({ revealedId: null });
-      }, REVEAL_MS);
-    }
   },
 
   showToast: (message, options) => {

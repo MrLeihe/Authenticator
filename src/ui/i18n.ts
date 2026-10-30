@@ -18,7 +18,9 @@ export type Lang = 'zh' | 'en';
 
 const zh = {
   // ---------------------------------------------------------------- 通用
-  'app.name': '验证码',
+  // 不叫「验证码」：那个词在大众语境里默认指短信验证码，而这里显示的是
+  // 本机算出来的两步验证码。叫「身份验证器」才是用户认识这个东西的名字
+  'app.name': '身份验证器',
   'common.cancel': '取消',
   'common.back': '返回',
   'common.continue': '继续',
@@ -86,15 +88,15 @@ const zh = {
   'list.view-group': '显示方式',
   'view.normal': '正常',
   'view.compact': '紧凑',
-  'view.masked': '隐藏',
+  'list.theme-to-dark': '切换到深色',
+  'list.theme-to-light': '切换到浅色',
   'list.empty.title': '还没有添加任何账户',
-  'list.empty.body': '点下面的「添加账户」，扫码或手动输入密钥都能加进来',
+  'list.empty.body': '点右上角的加号，扫码或手动输入密钥都能加进来',
   'list.no-match.title': '没有匹配的账户',
   'list.no-match.body': '换个关键词试试，或者清空搜索框看全部账户',
 
   // ---------------------------------------------------------------- 账户行
   'row.aria.copy': '{name}，验证码 {code}，点击复制',
-  'row.aria.masked': '{name}，验证码已隐藏，点击显示',
   'row.aria.invalid': '{name}，密钥无效，无法生成验证码',
   'row.code-refreshed': '新的验证码已生成',
   'row.pin': '置顶',
@@ -132,7 +134,7 @@ const zh = {
   'notice.password-updated': '密码已更新，请用新密码解锁',
 
   // ---------------------------------------------------------------- 首次引导
-  'onboard.title': '先给验证码上一把锁',
+  'onboard.title': '先给身份验证器上把锁',
   'onboard.body': '账户数据只加密保存在这台电脑上，不同步、不上传，也没有服务器能看到你的密钥。',
   'onboard.point.password.title': '设一个密码',
   'onboard.point.password.body': '打开扩展时要先解锁，别人拿到电脑也看不到验证码',
@@ -218,7 +220,7 @@ const zh = {
   // ---------------------------------------------------------------- 设置
   'settings.title': '设置',
   'settings.section.display': '显示',
-  'settings.view': '验证码显示方式',
+  'settings.view': '列表显示方式',
   'settings.initials': '显示账户首字母图标',
   'settings.initials.hint': '关掉之后列表更素净，宽度也更省',
   'settings.theme': '主题',
@@ -347,7 +349,7 @@ export type MessageKey = keyof typeof zh;
  * `pnpm typecheck` 会当场报错 —— 这正是我们要的"漏翻译不可能上线"。
  */
 const en: Record<MessageKey, string> = {
-  'app.name': 'Codes',
+  'app.name': 'Authenticator',
   'common.cancel': 'Cancel',
   'common.back': 'Back',
   'common.continue': 'Continue',
@@ -412,14 +414,14 @@ const en: Record<MessageKey, string> = {
   'list.view-group': 'Display mode',
   'view.normal': 'Normal',
   'view.compact': 'Compact',
-  'view.masked': 'Hidden',
+  'list.theme-to-dark': 'Switch to dark',
+  'list.theme-to-light': 'Switch to light',
   'list.empty.title': 'No accounts yet',
-  'list.empty.body': 'Use “Add account” below — scan a QR code or type the secret by hand',
+  'list.empty.body': 'Use the + at the top right — scan a QR code or type the secret by hand',
   'list.no-match.title': 'No matching accounts',
   'list.no-match.body': 'Try another keyword, or clear the search box to see everything',
 
   'row.aria.copy': '{name}, code {code}, press to copy',
-  'row.aria.masked': '{name}, code hidden, press to reveal',
   'row.aria.invalid': '{name}, invalid secret, no code can be generated',
   'row.code-refreshed': 'New code generated',
   'row.pin': 'Pin',
@@ -454,7 +456,7 @@ const en: Record<MessageKey, string> = {
   'notice.password-set': 'Unlock with your new password',
   'notice.password-updated': 'Password updated. Unlock with the new one.',
 
-  'onboard.title': 'Lock your codes first',
+  'onboard.title': 'Lock your authenticator first',
   'onboard.body': 'Account data is stored encrypted on this computer only. Nothing is synced or uploaded, and no server ever sees your secrets.',
   'onboard.point.password.title': 'Set a password',
   'onboard.point.password.body': 'The extension asks for it before showing codes, so whoever picks up the computer sees nothing',
@@ -534,7 +536,7 @@ const en: Record<MessageKey, string> = {
 
   'settings.title': 'Settings',
   'settings.section.display': 'Display',
-  'settings.view': 'Code display mode',
+  'settings.view': 'List display',
   'settings.initials': 'Show account initials',
   'settings.initials.hint': 'Turn it off for a plainer list that uses less width',
   'settings.theme': 'Theme',

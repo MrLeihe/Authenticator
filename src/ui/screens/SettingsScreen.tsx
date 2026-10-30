@@ -44,7 +44,6 @@ export function SettingsScreen() {
             options={[
               { value: 'normal' as const, label: t('view.normal') },
               { value: 'compact' as const, label: t('view.compact') },
-              { value: 'masked' as const, label: t('view.masked') },
             ]}
           />
           <Toggle

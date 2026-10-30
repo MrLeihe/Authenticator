@@ -32,7 +32,7 @@ export interface Settings {
   /** `system` 跟随浏览器语言，写盘时收敛成 `zh` / `en` */
   language: 'system' | 'zh' | 'en';
   sortBy: 'manual' | 'issuer' | 'name';
-  view: 'normal' | 'compact' | 'masked';
+  view: 'normal' | 'compact';
   showInitials: boolean;
   openMode: 'popup' | 'window' | 'sidepanel';
   popupSize: 'sm' | 'md' | 'lg';
