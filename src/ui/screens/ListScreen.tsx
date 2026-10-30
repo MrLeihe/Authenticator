@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { remainingSeconds } from '@/core/totp';
 import type { CachedCode } from '@/core/totp-cache';
 import { TotpCache } from '@/core/totp-cache';
 import type { Account } from '@/core/types';
@@ -90,8 +91,7 @@ export function ListScreen() {
 
   const remainingOf = (account: Account): number => {
     const period = codes.get(account.id)?.period ?? account.period ?? 30;
-    const seconds = Math.floor(now / 1000);
-    return period - (seconds % period);
+    return remainingSeconds(period, now);
   };
 
   return (
