@@ -43,7 +43,7 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 >
 > - 粘贴 `otpauth://` 地址、扫二维码截图，或从别的验证器导入，把你的两步验证账户搬进来
 > - 一屏看完所有验证码，点一下就复制，倒计时环告诉你还剩几秒
-> - 三种视图：正常、紧凑（一屏放更多）、打码（开会投屏时不泄露）
+> - 两种视图：正常、紧凑（一屏放更多）；顶部一个按钮就能切明暗主题
 > - 搜索、置顶、拖拽排序
 >
 > **数据只在你手里**
@@ -69,7 +69,7 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 >
 > - Bring your accounts in by pasting an `otpauth://` URI, scanning a QR screenshot, or importing from another authenticator
 > - See every code at a glance, click to copy, and watch the countdown ring for what is left
-> - Three views: normal, compact (more accounts per screen), masked (safe on a shared screen)
+> - Two views: normal and compact (more accounts per screen); one button in the header flips light/dark
 > - Search, pin and drag to reorder
 >
 > **Your data stays with you**
@@ -101,6 +101,8 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 
 截图里的账户名全部是 `example.com` 之类的合成数据，密钥由固定种子生成，**没有一条真实账户**；列表里的验证码在生成截图时也看不出真实密钥（截图为静态图片，码早已过期）。
 
+倒计时环在剩余 ≤4 秒时会变橙并加粗描边 —— 素材里出现一片橙色看起来像在报警。出图前等一次翻页（剩余 25 秒以上）再截；截图链路本身有十几秒的固定开销，想稳住颜色可以在页面里临时把 `Date.now` 钉在一个刚翻页的时刻，截完再恢复。
+
 ## 5. 隐私与合规
 
 | 项 | 位置 / 状态 |
@@ -113,7 +115,7 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 
 ## 6. 审核备注（Reviewer notes，可填一段）
 
-> This extension has no host permissions and makes no network requests. All code is bundled; there is no remote script and no `eval`. The only permission is `storage`, used for the encrypted vault, settings and local backups. To try it: click the toolbar icon, choose "以后再说" (skip the password) to create an unencrypted vault, then add an account by pasting any `otpauth://` URI. No sign-in or test account is required.
+> This extension has no host permissions and makes no network requests. All code is bundled; there is no remote script and no `eval`. The only permission is `storage`, used for the encrypted vault, settings and local backups. To try it: click the toolbar icon, choose "先不用密码，直接开始" (skip the password) to create an unencrypted vault, then add an account by pasting any `otpauth://` URI. No sign-in or test account is required.
 
 ## 7. 提交前自查
 
