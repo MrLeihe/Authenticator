@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { copyText } from '@/platform/clipboard';
+import { downloadText, exportFileName } from '@/platform/files';
 import { useT } from '../i18n';
-import { CheckIcon, CopyIcon, KeyIcon } from './Icons';
+import { CheckIcon, CopyIcon, DownloadIcon, KeyIcon } from './Icons';
 import { PrimaryButton } from './Button';
 
 /**
@@ -31,6 +32,12 @@ export function RecoveryCodeSheet({ code, onDone }: { code: string; onDone: () =
     }
   };
 
+  const handleDownload = () => {
+    // 单独的前缀：恢复码文件不该和账户备份文件长得一样，免得混在一起
+    const name = exportFileName('txt', new Date(), 'sixring-recovery');
+    downloadText(name, `${code}\n`, 'text/plain');
+  };
+
   return (
     <div className="flex min-h-[280px] flex-col bg-bg px-5 pb-5 pt-6">
       <div className="mb-1 flex items-center gap-2">
@@ -53,14 +60,24 @@ export function RecoveryCodeSheet({ code, onDone }: { code: string; onDone: () =
             </span>
           ))}
         </div>
-        <button
-          type="button"
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[8px] bg-surface-alt py-2 text-[12px] font-medium text-fg transition-colors duration-150 hover:bg-separator"
-          onClick={() => void handleCopy()}
-        >
-          {copied ? <CheckIcon size={14} className="text-success" /> : <CopyIcon size={14} />}
-          {copied ? t('recovery.copied') : t('recovery.copy')}
-        </button>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="flex items-center justify-center gap-1.5 rounded-[8px] bg-surface-alt py-2 text-[12px] font-medium text-fg transition-colors duration-150 hover:bg-separator"
+            onClick={() => void handleCopy()}
+          >
+            {copied ? <CheckIcon size={14} className="text-success" /> : <CopyIcon size={14} />}
+            {copied ? t('recovery.copied') : t('recovery.copy')}
+          </button>
+          <button
+            type="button"
+            className="flex items-center justify-center gap-1.5 rounded-[8px] bg-surface-alt py-2 text-[12px] font-medium text-fg transition-colors duration-150 hover:bg-separator"
+            onClick={handleDownload}
+          >
+            <DownloadIcon size={14} />
+            {t('recovery.download')}
+          </button>
+        </div>
       </div>
 
       <ul className="mt-3 space-y-1 text-[11px] leading-relaxed text-fg-muted">

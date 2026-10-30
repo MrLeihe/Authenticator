@@ -21,8 +21,12 @@ export function downloadText(filename: string, text: string, mime: string): void
 }
 
 /** `authenticator-2026-10-29`：用本地时区，因为用户看的是自己的日历 */
-export function exportFileName(extension: string, now: Date = new Date()): string {
+export function exportFileName(
+  extension: string,
+  now: Date = new Date(),
+  prefix = 'authenticator',
+): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  return `authenticator-${stamp}.${extension}`;
+  return `${prefix}-${stamp}.${extension}`;
 }
