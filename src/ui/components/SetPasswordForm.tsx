@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MIN_PASSWORD_LENGTH, checkPassword } from '@/core/crypto';
-import { describePasswordIssue, useErrorText, useMessage } from '../errors';
+import { describeError, describePasswordIssue, useMessage } from '../errors';
+import type { Message } from '../errors';
 import { listSeparator, useLang, useT } from '../i18n';
 import type { MessageKey } from '../i18n';
 import { PasswordInput } from './PasswordInput';
@@ -22,10 +23,9 @@ export function SetPasswordForm({
   const t = useT();
   const lang = useLang();
   const message = useMessage();
-  const errorText = useErrorText();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const [working, setWorking] = useState(false);
 
   const strength = checkPassword(password);
@@ -40,7 +40,7 @@ export function SetPasswordForm({
     try {
       await onSubmit(password);
     } catch (cause) {
-      setError(errorText(cause));
+      setError(describeError(cause));
     } finally {
       setWorking(false);
     }
@@ -69,7 +69,7 @@ export function SetPasswordForm({
 
       {error && (
         <p role="alert" className="text-[11px] leading-relaxed text-danger">
-          {error}
+          {message(error)}
         </p>
       )}
 

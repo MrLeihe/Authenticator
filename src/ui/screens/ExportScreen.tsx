@@ -6,7 +6,8 @@ import { Button, SecondaryButton } from '../components/Button';
 import { PasswordInput } from '../components/PasswordInput';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Segmented } from '../components/TextInput';
-import { describePasswordIssue, useErrorText, useMessage } from '../errors';
+import { describeError, describePasswordIssue, useMessage } from '../errors';
+import type { Message } from '../errors';
 import { listSeparator, useLang, useT } from '../i18n';
 import { useAccounts, useAppStore } from '../store';
 
@@ -22,7 +23,6 @@ export function ExportScreen() {
   const t = useT();
   const lang = useLang();
   const message = useMessage();
-  const errorText = useErrorText();
   const back = useAppStore((s) => s.back);
   const accounts = useAccounts();
 
@@ -32,7 +32,7 @@ export function ExportScreen() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
   const empty = accounts.length === 0;
@@ -46,7 +46,7 @@ export function ExportScreen() {
     setError(null);
     setDone(null);
     if (mode === 'encrypted' && password !== confirm) {
-      setError(t('export.mismatch'));
+      setError({ key: 'export.mismatch' });
       return;
     }
     setBusy(true);
@@ -60,7 +60,7 @@ export function ExportScreen() {
       }
       setDone(t('export.done', { count: accounts.length, name }));
     } catch (cause) {
-      setError(errorText(cause, 'import'));
+      setError(describeError(cause, 'import'));
     } finally {
       setBusy(false);
     }
@@ -133,7 +133,7 @@ export function ExportScreen() {
           </>
         )}
 
-        {error && <p className="text-[11px] leading-relaxed text-danger">{error}</p>}
+        {error && <p className="text-[11px] leading-relaxed text-danger">{message(error)}</p>}
         {done && <p className="text-[11px] leading-relaxed text-fg">{done}</p>}
 
         {!empty && (

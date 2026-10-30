@@ -10,11 +10,12 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import {
   UiError,
   describeDiagnostic,
+  describeError,
   describeNote,
   describeSkip,
-  useErrorText,
   useMessage,
 } from '../errors';
+import type { Message } from '../errors';
 import { useT } from '../i18n';
 import type { Translate } from '../i18n';
 import { useAccounts, useAppStore } from '../store';
@@ -29,7 +30,7 @@ import { useAccounts, useAppStore } from '../store';
  */
 export function ImportScreen({ initialText }: { initialText?: string | undefined }) {
   const t = useT();
-  const errorText = useErrorText();
+  const message = useMessage();
   const back = useAppStore((s) => s.back);
   const importAccounts = useAppStore((s) => s.importAccounts);
   const accounts = useAccounts();
@@ -38,7 +39,7 @@ export function ImportScreen({ initialText }: { initialText?: string | undefined
   const fileInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<'pick' | 'password' | 'preview'>('pick');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const [dragging, setDragging] = useState(false);
   const [text, setText] = useState('');
   /** 加密备份：等用户把密码填进来再解 */
@@ -73,7 +74,7 @@ export function ImportScreen({ initialText }: { initialText?: string | undefined
         setStep('password');
         return;
       }
-      setError(errorText(cause, 'import'));
+      setError(describeError(cause, 'import'));
     } finally {
       setBusy(false);
     }
@@ -91,7 +92,7 @@ export function ImportScreen({ initialText }: { initialText?: string | undefined
       const content = file.type.startsWith('image/') ? await decodeQrFile(file) : await file.text();
       await read(content);
     } catch (cause) {
-      setError(errorText(cause, 'import'));
+      setError(describeError(cause, 'import'));
     } finally {
       setBusy(false);
     }
@@ -128,7 +129,7 @@ export function ImportScreen({ initialText }: { initialText?: string | undefined
     try {
       await importAccounts(plan.add.map((entry) => entry.draft));
     } catch (cause) {
-      setError(errorText(cause, 'import'));
+      setError(describeError(cause, 'import'));
       setBusy(false);
     }
   };
@@ -278,7 +279,7 @@ export function ImportScreen({ initialText }: { initialText?: string | undefined
             role="alert"
             className="mt-3 rounded-[10px] bg-danger/5 px-3.5 py-2.5 text-[12px] leading-relaxed text-danger"
           >
-            {error}
+            {message(error)}
           </p>
         )}
       </div>

@@ -10,6 +10,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { Switch } from '../components/Switch';
 import { Segmented } from '../components/TextInput';
 import { describeError, useMessage } from '../errors';
+import type { Message } from '../errors';
 import { useT } from '../i18n';
 import { useAppStore, useSettings, useTrash } from '../store';
 
@@ -404,7 +405,7 @@ function PasswordItem({ enabled }: { enabled: boolean }) {
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
 
   const reset = () => {
     setMode('idle');
@@ -418,7 +419,7 @@ function PasswordItem({ enabled }: { enabled: boolean }) {
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
     if (next !== confirm) {
-      setError(t('settings.password-mismatch'));
+      setError({ key: 'settings.password-mismatch' });
       return;
     }
     setBusy(true);
@@ -426,7 +427,7 @@ function PasswordItem({ enabled }: { enabled: boolean }) {
       await action();
       reset();
     } catch (cause) {
-      setError(message(describeError(cause)));
+      setError(describeError(cause));
       setBusy(false);
     }
   };
@@ -503,7 +504,7 @@ function PasswordItem({ enabled }: { enabled: boolean }) {
         </>
       )}
 
-      {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}
+      {error && <p className="text-[12px] leading-relaxed text-danger">{message(error)}</p>}
 
       <div className="space-y-1.5 pt-0.5">
         <Button
