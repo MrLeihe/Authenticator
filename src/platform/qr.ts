@@ -1,5 +1,3 @@
-import jsQR from 'jsqr';
-
 /**
  * 图片 → 二维码文本。
  *
@@ -96,16 +94,42 @@ function toCanvas(source: ImageBitmap, width: number, height: number): ImageData
   return context.getImageData(0, 0, width, height);
 }
 
-function decode(imageData: ImageData): string | null {
-  const result = jsQR(imageData.data, imageData.width, imageData.height, {
+type JsQr = typeof import('jsqr').default;
+
+/**
+ * jsQR 只在兜底路径用到，却是整个包里最重的一块。
+ *
+ * 静态 import 会把它焊进 popup 的入口 chunk：用户每打开一次弹窗，都要为一条
+ * 绝大多数时候走不到的路径付下载和解析的钱。改成动态 import 后它单独成块，
+ * 只有平台识别器不可用（Linux 桌面、不支持 qr_code 的构建）时才去取。
+ *
+ * 取不到（chunk 缺失、被 CSP 拦下）就当作"没有这个东西"：
+ * 这是兜底路径，它挂掉不该盖过主路径的结论，上层照常报 no-code。
+ * 失败结果也缓存 —— 环境不会在同一个会话里突然长出这个模块，
+ * 每次解码都重试只是把失败的过程再走一遍。
+ */
+let jsqr: Promise<JsQr | null> | null = null;
+
+function loadJsQr(): Promise<JsQr | null> {
+  jsqr ??= import('jsqr')
+    .then((mod) => mod.default)
+    .catch(() => null);
+  return jsqr;
+}
+
+function decode(jsQr: JsQr, imageData: ImageData): string | null {
+  const result = jsQr(imageData.data, imageData.width, imageData.height, {
     // 只找回字形二维码：反色二维码（白码黑底）真实存在，但优先正色
     inversionAttempts: 'attemptBoth',
   });
   return result?.data ?? null;
 }
 
-function decodeWithJsQr(bitmap: ImageBitmap): string | null {
-  const direct = decode(toCanvas(bitmap, bitmap.width, bitmap.height));
+async function decodeWithJsQr(bitmap: ImageBitmap): Promise<string | null> {
+  const jsQr = await loadJsQr();
+  if (!jsQr) return null;
+
+  const direct = decode(jsQr, toCanvas(bitmap, bitmap.width, bitmap.height));
   if (direct) return direct;
 
   const longest = Math.max(bitmap.width, bitmap.height);
@@ -116,7 +140,7 @@ function decodeWithJsQr(bitmap: ImageBitmap): string | null {
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
     if (width * height > 8_000_000) continue;
-    const found = decode(toCanvas(bitmap, width, height));
+    const found = decode(jsQr, toCanvas(bitmap, width, height));
     if (found) return found;
   }
   return null;
@@ -139,7 +163,7 @@ export async function decodeQrImage(blob: Blob): Promise<string> {
     const fromPlatform = await detectWithPlatform(bitmap);
     if (fromPlatform) return fromPlatform;
 
-    const fromJsQr = decodeWithJsQr(bitmap);
+    const fromJsQr = await decodeWithJsQr(bitmap);
     if (fromJsQr) return fromJsQr;
   } finally {
     bitmap.close();

@@ -38,16 +38,27 @@ export function useResolvedDark(mode: ThemeMode): boolean {
  * 就会先调一次，目的是别让弹窗先白后黑闪一下。那一步发生时库还没解开，
  * 读不到用户真正选过的主题，只能按默认值猜 —— 猜成 `system` 的话，
  * 系统是深色的用户每打开一次弹窗都会先黑后白，比猜错一个用户的偏好更常见。
+ *
+ * 真正接上 React 之后要换成 `syncTheme`：这里注册的 `matchMedia` 监听器
+ * 一旦没人解绑就会一直活着，和 `useEffect` 里那一份对同一个事件各写一次 class。
  */
 export function applyTheme(mode: ThemeMode = 'light'): () => void {
   const media = window.matchMedia('(prefers-color-scheme: dark)');
-
-  const sync = () => {
-    const dark = mode === 'dark' || (mode === 'system' && media.matches);
-    document.documentElement.classList.toggle('dark', dark);
-  };
-
+  const sync = () => syncTheme(mode);
   sync();
   media.addEventListener('change', sync);
   return () => media.removeEventListener('change', sync);
+}
+
+/**
+ * 只落一次 class，不注册监听器。
+ *
+ * 给"React 还没挂载、但要先把底色定下来"这一步用 —— 防闪白只需要写这一次，
+ * 后续的跟随由 `applyTheme` 在 `useEffect` 里负责。两处都注册监听器的话，
+ * 系统主题一变就会有两个回调抢着写同一个 class。
+ */
+export function syncTheme(mode: ThemeMode): void {
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const dark = mode === 'dark' || (mode === 'system' && media.matches);
+  document.documentElement.classList.toggle('dark', dark);
 }

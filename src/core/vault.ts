@@ -58,13 +58,6 @@ export interface NormalizeResult {
   notes: RepairNote[];
 }
 
-/** 纯英文调试串，只给控制台和测试看，不进界面 */
-export function debugRepair(note: RepairNote): string {
-  return Object.entries(note)
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join(' ');
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

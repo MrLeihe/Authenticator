@@ -70,7 +70,8 @@ export function scheduleClipboardClear(seconds: number): void {
   }, seconds * 1000);
 }
 
-export function cancelClipboardClear(): void {
+/** 内部用：重新排一次计时器前先撤掉上一次，免得两次复制叠出两个定时器 */
+function cancelClipboardClear(): void {
   if (clearTimer !== null) {
     clearTimeout(clearTimer);
     clearTimer = null;

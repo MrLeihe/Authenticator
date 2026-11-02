@@ -1,4 +1,5 @@
 import { defineManifest } from '@crxjs/vite-plugin';
+import { version } from './package.json';
 
 /**
  * MV3 manifest。
@@ -18,7 +19,10 @@ export default defineManifest({
   manifest_version: 3,
   name: '__MSG_extName__',
   description: '__MSG_extDesc__',
-  version: '1.0.0',
+  // 版本号只认 package.json 一处。
+  // 以前这里、package.json、以及 zip 脚本里的文件名各写一遍，
+  // 发 1.0.1 时漏改一处，就会出现"包里写着 1.0.1、压缩包却叫 1.0.0"这种事故
+  version,
   default_locale: 'zh_CN',
   minimum_chrome_version: '112', // storage.session.setAccessLevel 需要 112+
 

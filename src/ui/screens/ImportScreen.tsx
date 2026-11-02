@@ -98,7 +98,13 @@ export function ImportScreen({ initialText }: { initialText?: string | undefined
     }
   };
 
-  // 截图里的迁移码可以直接粘贴进来，和添加账户时的习惯保持一致
+  // 截图里的迁移码可以直接粘贴进来，和添加账户时的习惯保持一致。
+  //
+  // 只在挂载时挂一次：不写依赖数组的话，每渲染一次都要摘挂一遍监听器，
+  // 而粘贴事件正好落进那个空档就丢了。回调要读最新的 `handleFile`，
+  // 所以走 ref（和 AccountRow 里那对 window 拖拽监听器同一个套路）。
+  const handleFileRef = useRef(handleFile);
+  handleFileRef.current = handleFile;
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
       const file = Array.from(event.clipboardData?.files ?? []).find((item) =>
@@ -106,21 +112,23 @@ export function ImportScreen({ initialText }: { initialText?: string | undefined
       );
       if (file) {
         event.preventDefault();
-        void handleFile(file);
+        void handleFileRef.current(file);
       }
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  });
+  }, []);
 
   // 从扫码或粘贴转过来的内容：进来时已经有东西可读，直接进预览。
-  // 再让用户把同一张图选一遍，等于否认他刚才做的那一步
+  // 再让用户把同一张图选一遍，等于否认他刚才做的那一步。
+  // 只认挂载时拿到的那一份 —— 之后 `initialText` 再变也不该重跑，
+  // 否则用户在预览页里翻看时会被一次无关的重渲染踢回文件选择
   const autoRan = useRef(false);
   useEffect(() => {
     if (initialText === undefined || initialText === '' || autoRan.current) return;
     autoRan.current = true;
     void read(initialText);
-  });
+  }, []);
 
   const confirm = async () => {
     if (!plan || plan.add.length === 0) return;
@@ -368,8 +376,10 @@ function Preview({
             {t('import.count.issues', { count: plan.issues.length })}
           </h2>
           <ul className="space-y-1 rounded-card bg-danger/5 px-4 py-3">
-            {shown.map((issue) => (
-              <li key={issue} className="text-[12px] leading-relaxed text-danger">
+            {shown.map((issue, index) => (
+              // 同一份文件里可能有两张同名账户，诊断句子就会一模一样 ——
+              // 只拿句子当 key 会撞车，带上序号才是唯一
+              <li key={`${index}:${issue}`} className="text-[12px] leading-relaxed text-danger">
                 {issue}
               </li>
             ))}

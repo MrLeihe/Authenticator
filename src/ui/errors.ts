@@ -147,7 +147,8 @@ export function describePasswordIssue(issue: PasswordIssue): Message {
  *
  * 迁移码里的 `label` 可能是空串（那一项既没有 issuer 也没有账户名），
  * 这时换成按序号说话的版本 —— 否则会出现「  是 HOTP」这种少半句的提示。
- */export function describeDiagnostic(diagnostic: Diagnostic): Message {
+ */
+export function describeDiagnostic(diagnostic: Diagnostic): Message {
   switch (diagnostic.code) {
     case 'entry-not-object':
       return { key: 'import.issue.entry-not-object', vars: { index: diagnostic.index + 1 } };

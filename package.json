@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Sixring - a local-only TOTP authenticator browser extension.",
+  "description": "A local-only TOTP authenticator browser extension.",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -11,9 +11,10 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm typecheck && vite build",
-    "zip": "pnpm build && rm -f sixring-1.0.0.zip && cd dist && zip -qr ../sixring-1.0.0.zip . -x '*.map' && cd .. && ls -lh sixring-1.0.0.zip",
+    "zip": "pnpm build && V=$(node -p \"require('./package.json').version\") && rm -f authenticator-*.zip && cp LICENSE docs/THIRD_PARTY_LICENSES.md dist/ && cd dist && zip -qr ../authenticator-$V.zip . -x '*.map' && cd .. && ls -lh authenticator-$V.zip",
     "test": "vitest run",
     "test:watch": "vitest",
+    "shots": "node scripts/shots/capture.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {

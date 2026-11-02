@@ -36,6 +36,8 @@ export const KEYS = {
   /** session 区 */
   dek: '2fa:dek',
   unlockedAt: '2fa:unlockedAt',
+  /** 解锁失败的计数与锁定截止时间，见 `platform/lockout.ts` */
+  lockout: '2fa:lockout',
 } as const;
 
 export function backupKey(date: string): string {

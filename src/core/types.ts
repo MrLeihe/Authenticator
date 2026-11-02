@@ -13,6 +13,14 @@ export interface Account {
   /** 稀疏排序值，间隔 1024，见 SPEC §3.4 */
   order: number;
   pinned: boolean;
+  /**
+   * 所属分组。**V1.0 没有任何界面入口**，写入时一律为 `null`。
+   *
+   * 字段与下面的 `Vault.groups` 是给 V1.1 的分组功能预留的：schema 一旦发出去
+   * 就只能加不能改，等有界面时再补字段，老数据的迁移成本会比现在留一个空字段高。
+   * 所以 `normalizeVault` 仍然替它维护"指向不存在的分组就清空"这条不变量 ——
+   * 这不是死代码在收税，而是**为了将来能安全落地的定金**。
+   */
   groupId: string | null;
   createdAt: number;
   /**
@@ -77,14 +85,7 @@ export interface Vault {
   accounts: Account[];
   /** 「最近删除」：软删除的账户，30 天后惰性清除。与 accounts 物理隔离 */
   trash: Account[];
+  /** 分组。**V1.0 恒为空数组**，没有界面入口 —— 保留原因见 `Account.groupId` */
   groups: Group[];
   settings: Settings;
 }
-
-export const emptyVault = (): Vault => ({
-  version: 1,
-  accounts: [],
-  trash: [],
-  groups: [],
-  settings: { ...DEFAULT_SETTINGS },
-});

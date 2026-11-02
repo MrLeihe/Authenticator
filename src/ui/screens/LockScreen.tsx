@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CryptoError } from '@/core/crypto';
+import { clearLockout, readLockout, recordFailure, remainingMs } from '@/platform/lockout';
 import { PasswordInput } from '../components/PasswordInput';
 import { PrimaryButton, TextButton } from '../components/Button';
 import { SetPasswordForm } from '../components/SetPasswordForm';
@@ -8,11 +9,6 @@ import { describeError, useMessage } from '../errors';
 import type { Message } from '../errors';
 import { useT } from '../i18n';
 import { useAppStore } from '../store';
-
-/** 连续输错 5 次后锁 60 秒。纯客户端挡不住有存储权限的人，只是让手输猜密码变慢 */
-const MAX_FAILURES = 5;
-const LOCKOUT_SECONDS = 60;
-const LOCKOUT_MS = LOCKOUT_SECONDS * 1000;
 
 /**
  * 解锁页。两条路：密码、恢复码。
@@ -33,11 +29,26 @@ export function LockScreen() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
-  const [failures, setFailures] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [remaining, setRemaining] = useState(0);
   const passwordBoxRef = useRef<HTMLDivElement>(null);
   const locked = lockedUntil !== null;
+
+  // 失败计数与锁定到期时间存在会话级存储里，不跟着组件走：
+  // 弹窗一关 JS 环境就销毁，只放 state 的话"关掉再打开"就把计数清零了，
+  // 那这条减速带等于不存在。原因看 platform/lockout.ts 里的注释
+  useEffect(() => {
+    let cancelled = false;
+    void readLockout().then((state) => {
+      if (cancelled) return;
+      const left = remainingMs(state);
+      setRemaining(Math.ceil(left / 1000));
+      setLockedUntil(left > 0 ? state.until : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 锁定倒计时。每 500ms 刷一次，界面上的秒数不会跳格
   useEffect(() => {
@@ -47,7 +58,8 @@ export function LockScreen() {
       setRemaining(left);
       if (left === 0) {
         setLockedUntil(null);
-        setFailures(0);
+        // 到期就把记录抹掉：否则下次打开还会看到"已锁定 0 秒"的空壳
+        void clearLockout();
       }
     };
     tick();
@@ -70,18 +82,17 @@ export function LockScreen() {
     setError(null);
     try {
       await unlock(password);
+      // 解锁成功就把失败记录清零，别让上一次的进度留到下一次上锁之后
+      await clearLockout();
     } catch (cause) {
       setError(describeError(cause));
       setPassword('');
       // 只有"密码不对"才计入锁定；存储损坏之类的错误不该锁住用户
       if (cause instanceof CryptoError && cause.reason === 'wrong-key') {
-        const next = failures + 1;
-        if (next >= MAX_FAILURES) {
-          setFailures(0);
-          setRemaining(LOCKOUT_SECONDS);
-          setLockedUntil(Date.now() + LOCKOUT_MS);
-        } else {
-          setFailures(next);
+        const next = await recordFailure();
+        if (next.until > 0) {
+          setRemaining(Math.ceil(remainingMs(next) / 1000));
+          setLockedUntil(next.until);
         }
         shakePassword();
       }
@@ -165,6 +176,8 @@ export function LockScreen() {
                 setBusy(true);
                 try {
                   await recover(code, newPassword);
+                  // 恢复码也是"证明了身份"，同样该把失败计数清零
+                  await clearLockout();
                 } finally {
                   setBusy(false);
                 }
