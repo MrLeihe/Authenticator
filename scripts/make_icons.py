@@ -1,309 +1,81 @@
 #!/usr/bin/env python3
-"""生成扩展图标（16/32/48/128）。
+"""生成扩展图标（16/32/48/128）：正方形白底 + 蓝色圆 + 白色挂锁。
 
-不引第三方图形库：形状用有符号距离场算覆盖率，超采样代替抗锯齿，
-再手工拼 PNG（zlib + CRC）。这样图标永远可以按同一份几何重画，
-也不会在仓库里留下一个只能靠设计软件改的二进制。
+挂锁是纯几何、圆角白底，锁梁是圆头倒 U 环、两腿插入锁体（与方案墙/页面内
+AppMark 同款）。工具栏这一版把锁整体缩小约 20%，让锁在蓝圆里更居中、留白更多。
 
-默认图案是二维码：白色圆角磁贴上三块定位图案 + 一组数据模块，四色取自
-Google —— 左上蓝、右上红、左下绿，数据模块黄。
+关键点：每个尺寸都用 Chrome 直接按目标像素栅格化，而不是画 512px 再用 sips
+缩图。sips 的高质量缩放会把 16px 里那条 1.6px 的锁梁缝隙抗锯齿糊掉；直接渲染
+让浏览器在 16px 栅格上做抗锯齿，缝隙才保得住。
 
-  python3 scripts/make_icons.py               # 二维码版
-  python3 scripts/make_icons.py --scheme=star # 四色六臂星版
+依赖：Chrome（本机有）。页面内 AppMark（src/ui/components/Icons.tsx）是同一
+几何的「蓝圆占满、无白底」版本，比例一致。
 
-网格按尺寸退化，否则小图标会糊成一团色点：
-
-  48 / 128  15×15 单元，定位图案 7 单元（1:1:3:1:1 的真实 QR 比例）
-  32        11×11 单元，定位图案 5 单元，环更厚
-  16         7×7  单元，定位图案 3 单元，实心方块（再细化只剩像素噪点）
+  python3 scripts/make_icons.py
 """
 
-import math
-import struct
-import sys
-import zlib
+import shutil
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'public' / 'icons'
 
-# Google 四色
-BLUE = (0x42, 0x85, 0xF4)
-RED = (0xEA, 0x43, 0x35)
-YELLOW = (0xFB, 0xBC, 0x05)
-GREEN = (0x34, 0xA8, 0x53)
+CHROME = shutil.which('google-chrome') or shutil.which(
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+) or '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-TILE_TOP = (0xFF, 0xFF, 0xFF)
-TILE_BOTTOM = (0xEC, 0xF1, 0xF8)
+# viewBox 固定 100×100，尺寸由 width/height 决定，栅格化交给浏览器。
+# SIZE 是占位符（避免和 HTML 里 CSS 的花括号在 .format 下冲突，用 replace 替换）。
+# 白底是圆角矩形（rx=22）：Chrome 工具栏图标惯例是圆角白底，直角会显得"贴边"。
+# 挂锁用「插入式」：圆头锁梁两腿插入锁体，和方案墙/页面内 AppMark 同款，但整体缩小约 20%
+# （锁体 44→34 宽、锁梁 stroke 10→8），让锁在蓝圆里留出更多呼吸空间。
+SVG = """<svg width="SIZE" height="SIZE" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100" height="100" rx="22" fill="#fff"/>
+  <circle cx="50" cy="50" r="42" fill="#007AFF"/>
+  <path d="M38 48 v-7 a12 12 0 0 1 24 0 v7" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+  <rect x="33" y="48" width="34" height="24" rx="7" fill="#fff"/>
+</svg>"""
 
-# 三块定位图案的左上角格子与配色（col, row, color）
-FINDERS = (
-    (0, 0, BLUE),
-    (None, 0, RED),   # None = 贴右边缘，格子由网格宽度算
-    (0, None, GREEN),  # None = 贴下边缘
-)
-
-# 数据模块：右下那块空区里散落的格子，坐标是 (col, row)。
-# 手工挑的，密度参考真实 QR 的数据区 —— 太规则会像棋盘，太稀会显得空。
-DATA_MODULES = {
-    15: (
-        (8, 8), (11, 8), (13, 8),
-        (8, 9), (10, 9), (14, 9),
-        (9, 10), (12, 10), (13, 10), (14, 10),
-        (8, 11), (11, 11), (14, 11),
-        (8, 12), (9, 12), (10, 12), (13, 12),
-        (8, 13), (10, 13), (12, 13), (14, 13),
-        (9, 14), (11, 14), (13, 14),
-    ),
-    11: (
-        (6, 6), (8, 6), (10, 6),
-        (7, 7), (9, 7),
-        (6, 8), (8, 8), (10, 8),
-        (7, 9), (9, 9),
-        (6, 10), (8, 10), (10, 10),
-    ),
-    7: (
-        (4, 4), (5, 4),   # 两个相邻点合成一条黄块：16px 上比散点干净
-    ),
-}
-
-
-def clamp(value, low=0.0, high=1.0):
-    return low if value < low else high if value > high else value
-
-
-def mix(c1, c2, t):
-    t = clamp(t)
-    return tuple(c1[i] + (c2[i] - c1[i]) * t for i in range(3))
-
-
-def sd_round_rect(x, y, half, radius):
-    """中心在原点的圆角正方形（SDF）。"""
-    qx = abs(x) - (half - radius)
-    qy = abs(y) - (half - radius)
-    outside = math.hypot(max(qx, 0.0), max(qy, 0.0))
-    inside = min(max(qx, qy), 0.0)
-    return outside + inside - radius
-
-
-def qr_metrics(size):
-    """按尺寸选网格与定位图案大小，返回 (单元数, 定位图案单元数)。"""
-    if size >= 48:
-        return 15, 7
-    if size > 24:
-        return 11, 5
-    return 7, 3
-
-
-def qr_inner(size):
-    """图案区半宽 / 磁贴半宽。四周留白让图标不像铺满的截图，但小图标没有
-    多余像素可浪费，留白要一路收窄。"""
-    if size <= 24:
-        return 0.78
-    if size <= 40:
-        return 0.70
-    return 0.655
-
-
-def render_qr(size, ss=4, data_scale=0.47):
-    """白色磁贴 + 三块定位图案 + 数据模块。"""
-    n = size
-    half = n / 2.0
-    tile_radius = half * 0.235
-    grid, pat = qr_metrics(n)
-
-    inner = half * qr_inner(n)
-    unit = 2.0 * inner / grid
-
-    # 定位图案：外框、镂空、中心块的半宽
-    outer = pat / 2.0 * unit
-    if pat == 3:
-        ring_half = 0.0
-        center_half = 0.0
-    elif pat == 7:
-        ring_half = outer - 1.0 * unit
-        center_half = 1.5 * unit
-    else:
-        ring_half = outer - 0.95 * unit
-        center_half = 0.86 * unit
-    r_outer = unit * 0.40
-    r_ring = unit * 0.14
-    r_center = unit * 0.28
-
-    edge = grid - pat
-    finders = []
-    for col0, row0, color in FINDERS:
-        col0 = edge if col0 is None else col0
-        row0 = edge if row0 is None else row0
-        cx = -inner + (col0 + pat / 2.0) * unit
-        cy = -inner + (row0 + pat / 2.0) * unit
-        finders.append((cx, cy, color))
-
-    data = set(DATA_MODULES[grid])
-    if n <= 24:
-        data_scale = max(data_scale, 0.62)   # 工具栏上点太小就看不见了
-    data_half = unit * data_scale
-    data_radius = unit * 0.15
-
-    inv_ss = 1.0 / (ss * ss)
-    step = 1.0 / ss
-    rows = bytearray()
-    for py in range(n):
-        row = bytearray()
-        for px in range(n):
-            sr = sg = sb = sa = 0.0
-            for sy in range(ss):
-                y = (py * ss + sy + 0.5) * step - half
-                for sx in range(ss):
-                    x = (px * ss + sx + 0.5) * step - half
-                    if sd_round_rect(x, y, half, tile_radius) > 0:
-                        continue
-                    color = mix(TILE_TOP, TILE_BOTTOM, clamp((y + half) / n))
-
-                    for cx, cy, pcolor in finders:
-                        dx, dy = x - cx, y - cy
-                        d = sd_round_rect(dx, dy, outer, r_outer)
-                        if ring_half:
-                            d = max(d, -sd_round_rect(dx, dy, ring_half, r_ring))
-                        if d <= 0 or (center_half and sd_round_rect(dx, dy, center_half, r_center) <= 0):
-                            color = pcolor
-                            break
-                    else:
-                        if data:
-                            col = int((x + inner) / unit)
-                            rw = int((y + inner) / unit)
-                            if (col, rw) in data:
-                                cx = -inner + (col + 0.5) * unit
-                                cy = -inner + (rw + 0.5) * unit
-                                if sd_round_rect(x - cx, y - cy, data_half, data_radius) <= 0:
-                                    color = YELLOW
-
-                    sr += color[0]
-                    sg += color[1]
-                    sb += color[2]
-                    sa += 1.0
-            if sa:
-                row += bytes(
-                    (
-                        round(clamp(sr / sa / 255) * 255),
-                        round(clamp(sg / sa / 255) * 255),
-                        round(clamp(sb / sa / 255) * 255),
-                        round(sa * inv_ss * 255),
-                    )
-                )
-            else:
-                row += b'\x00\x00\x00\x00'
-        rows += b'\x00' + row
-    return bytes(rows)
-
-
-# ---------------------------------------------------------------- 备选：六臂星
-
-# (正方向角度, 正半色, 负半色)
-BARS = (
-    (270.0, BLUE, RED),
-    (330.0, GREEN, YELLOW),
-    (30.0, YELLOW, GREEN),
-)
-
-
-def star_metrics(size):
-    """按尺寸给几何参数：小图标要更粗更满，否则工具栏上只剩几粒色点。"""
-    n = size
-    if n <= 24:
-        return n * 0.072, n * 0.288
-    if n <= 40:
-        return n * 0.064, n * 0.280
-    return n * 0.058, n * 0.272
-
-
-def render_star(size, ss=4):
-    """三根圆角条在中心交叠成六臂星。"""
-    n = size
-    half = n / 2.0
-    radius = half * 0.235
-    bar_r, arm_len = star_metrics(size)
-
-    bars = []
-    for deg, pos_color, neg_color in BARS:
-        rad = math.radians(deg)
-        bars.append((math.cos(rad) * arm_len, math.sin(rad) * arm_len, pos_color, neg_color))
-
-    inv_ss = 1.0 / (ss * ss)
-    step = 1.0 / ss
-    rows = bytearray()
-    for py in range(n):
-        row = bytearray()
-        for px in range(n):
-            sr = sg = sb = sa = 0.0
-            for sy in range(ss):
-                y = (py * ss + sy + 0.5) * step - half
-                for sx in range(ss):
-                    x = (px * ss + sx + 0.5) * step - half
-                    if sd_round_rect(x, y, half, radius) > 0:
-                        continue
-                    color = mix(TILE_TOP, TILE_BOTTOM, clamp((y + half) / n))
-                    best = 1e9
-                    bar_color = None
-                    for dx, dy, pos_color, neg_color in bars:
-                        # t 落在 [-1, 1] 是条上，超出就是两端的圆头之外
-                        t = (x * dx + y * dy) / (dx * dx + dy * dy)
-                        tc = -1.0 if t < -1.0 else (1.0 if t > 1.0 else t)
-                        d = math.hypot(x - dx * tc, y - dy * tc) - bar_r
-                        if d < best:
-                            best = d
-                            bar_color = pos_color if t >= 0 else neg_color
-                    if best <= 0:
-                        color = bar_color
-                    sr += color[0]
-                    sg += color[1]
-                    sb += color[2]
-                    sa += 1.0
-            if sa:
-                row += bytes(
-                    (
-                        round(clamp(sr / sa / 255) * 255),
-                        round(clamp(sg / sa / 255) * 255),
-                        round(clamp(sb / sa / 255) * 255),
-                        round(sa * inv_ss * 255),
-                    )
-                )
-            else:
-                row += b'\x00\x00\x00\x00'
-        rows += b'\x00' + row
-    return bytes(rows)
-
-
-SCHEMES = {'qr': render_qr, 'star': render_star}
-
-
-def write_png(path, size, raw):
-    def chunk(tag, data):
-        body = tag + data
-        return struct.pack('>I', len(data)) + body + struct.pack('>I', zlib.crc32(body) & 0xFFFFFFFF)
-
-    header = struct.pack('>IIBBBBB', size, size, 8, 6, 0, 0, 0)
-    png = (
-        b'\x89PNG\r\n\x1a\n'
-        + chunk(b'IHDR', header)
-        + chunk(b'IDAT', zlib.compress(raw, 9))
-        + chunk(b'IEND', b'')
-    )
-    path.write_bytes(png)
+HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html,body{margin:0;padding:0;background:transparent}
+svg{display:block}
+</style>
+</head>
+<body>{svg}</body>
+</html>
+"""
 
 
 def main():
-    scheme = 'qr'
-    for arg in sys.argv[1:]:
-        if arg.startswith('--scheme='):
-            scheme = arg.split('=', 1)[1]
-    if scheme not in SCHEMES:
-        raise SystemExit(f'unknown scheme: {scheme}（可选 {" / ".join(SCHEMES)}）')
-
-    render = SCHEMES[scheme]
     OUT.mkdir(parents=True, exist_ok=True)
     for size in (16, 32, 48, 128):
-        write_png(OUT / f'{size}.png', size, render(size))
+        svg = SVG.replace('SIZE', str(size))
+        tmp = Path(f'/tmp/authenticator-icon-{size}.html')
+        tmp.write_text(HTML.replace('{svg}', svg))
+        out = OUT / f'{size}.png'
+        subprocess.run(
+            [
+                CHROME,
+                '--headless=new',
+                '--no-sandbox',
+                '--disable-gpu',
+                '--hide-scrollbars',
+                '--force-device-scale-factor=1',
+                '--default-background-color=00000000',
+                f'--window-size={size},{size}',
+                '--virtual-time-budget=3000',
+                f'--screenshot={out}',
+                f'file://{tmp}',
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         print(f'icons/{size}.png')
 
 

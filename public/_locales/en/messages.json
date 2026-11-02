@@ -1,6 +1,6 @@
 {
   "extName": {
-    "message": "Sixring - TOTP Authenticator",
+    "message": "Authenticator - Local TOTP",
     "description": "Extension name shown in Chrome and in the store listing title."
   },
   "extDesc": {

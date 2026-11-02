@@ -179,9 +179,32 @@
     @apply absolute bottom-0 h-px bg-separator;
     left: var(--row-divider-inset, 16px);
     right: var(--row-divider-inset, 16px);
+    transition: opacity 150ms;
   }
   .row-divider:last-child::after {
     @apply hidden;
+  }
+
+  /* 拖拽排序中：行会平移着给落点让位，分隔线跟着行一起走会画出悬空的灰线，
+     反而不如整段收掉。落位之后再淡回来 */
+  .is-dragging .row-divider::after {
+    opacity: 0;
+  }
+  /* 拖动时禁用文本选择，避免把验证码一路选中高亮 */
+  .is-dragging {
+    user-select: none;
+  }
+
+  /* 拖拽中被拎起来的那一行。视觉上要"离列表更近一层"：亮色靠阴影，
+     暗色下黑阴影落在黑底上等于没有，改由"比列表亮一档的表面 + 描边"给抬升感 */
+  .drag-lift {
+    background: rgb(var(--surface));
+    border-radius: 12px;
+    box-shadow: 0 0 0 1px rgb(var(--separator)), 0 16px 40px rgb(0 0 0 / 0.28);
+  }
+  .dark .drag-lift {
+    background: rgb(var(--surface-alt));
+    box-shadow: 0 0 0 1px rgb(var(--separator)), 0 16px 40px rgb(0 0 0 / 0.6);
   }
 
   /* 卡片内部的行分隔线：相邻子元素之间画一根内缩的线。

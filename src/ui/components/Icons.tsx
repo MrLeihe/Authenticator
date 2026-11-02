@@ -26,6 +26,31 @@ function Svg({ size = 16, children, ...rest }: IconProps) {
   );
 }
 
+/** 应用标记：蓝色圆底 + 白色挂锁（锁梁弧 + 圆角锁体）。
+ *  工具栏那枚 png 是同一几何的蓝色圆形版本（scripts/make_icons.py）。
+ *  不套 Svg 的 24 格网格：锁的比例是按 100 格算出来的，换网格就变形了。 */
+export function AppMark({ size = 20, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      aria-hidden="true"
+      className={className}
+    >
+      <circle cx="50" cy="50" r="50" fill="currentColor" />
+      <path
+        d="M35 47 v-9 a15 15 0 0 1 30 0 v9"
+        fill="none"
+        stroke="#fff"
+        strokeWidth={10}
+        strokeLinecap="round"
+      />
+      <rect x="28" y="46" width="44" height="32" rx="10" fill="#fff" />
+    </svg>
+  );
+}
+
 export function CopyIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -176,6 +201,25 @@ export function ChevronRightIcon(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M9 5l7 7-7 7" />
+    </Svg>
+  );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Svg>
+  );
+}
+
+/** 地球：语言选择这类"跨语言"入口用 */
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a13.5 13.5 0 0 1 0 18 13.5 13.5 0 0 1 0-18" />
     </Svg>
   );
 }

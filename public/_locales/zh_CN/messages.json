@@ -1,6 +1,6 @@
 {
   "extName": {
-    "message": "Sixring - 两步验证器",
+    "message": "身份验证器 - 本地两步验证",
     "description": "扩展在 Chrome 中显示的名称，也是商店列表标题。"
   },
   "extDesc": {

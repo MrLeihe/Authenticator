@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { remainingSeconds } from '@/core/totp';
 import type { CachedCode } from '@/core/totp-cache';
 import { TotpCache } from '@/core/totp-cache';
 import type { Account } from '@/core/types';
-import { AccountRow } from '../components/AccountRow';
+import { AccountRow, rowHeight } from '../components/AccountRow';
 import { EmptyGuide } from '../components/EmptyGuide';
 import { PasswordHintBanner } from '../components/PasswordHintBanner';
-import { MoonIcon, KeyIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon } from '../components/Icons';
+import { AppMark, MoonIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon } from '../components/Icons';
 import { useTick } from '../hooks/useTick';
 import { useLang, useT } from '../i18n';
 import { useResolvedDark } from '../theme';
@@ -36,8 +36,28 @@ export function ListScreen() {
   // 拖拽排序：只有「手动」排序且没在搜索时才允许 ——
   // 搜索状态下列表只是全集的一个子集，拖出来的位置对不上真实顺序
   const manual = settings.sortBy === 'manual' && query.trim() === '';
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
+  /**
+   * 自绘拖拽的状态。`pointerY` 每一帧更新，落点和让位都从它推出来。
+   * `top` 是列表卡片顶部的视口 y —— 自动滚动时卡片会跟着往上走，要随滚更新，
+   * 否则"指针在第几条之间"会越拖越偏。
+   */
+  const [drag, setDrag] = useState<{
+    id: string;
+    from: number;
+    startY: number;
+    pointerY: number;
+    /** 列表卡片顶部此刻的视口 y，自动滚动时随滚更新 */
+    top: number;
+    /** 拖动开始那一刻的列表顶部 —— 用来抵消滚动，让被拖行一直贴住指针 */
+    startTop: number;
+  } | null>(null);
+  /** 刚落到新位置的那一条：泛一下底色，让眼睛跟得上它跳到了哪儿 */
+  const [landed, setLanded] = useState<string | null>(null);
+
+  // 指针 y 单独放一份 ref：自动滚动的 interval 每隔 16ms 读它，
+  // 不能依赖 React 状态（更新会晚半拍，而且会把 interval 逼着重挂）
+  const pointerRef = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const now = useTick(250);
   const cache = useRef(new TotpCache());
@@ -47,6 +67,44 @@ export function ListScreen() {
     () => filterAccounts(sortAccounts(accounts, settings.sortBy, lang), query),
     [accounts, settings.sortBy, lang, query],
   );
+
+  const rowH = rowHeight(settings.style, settings.view);
+  /** 被拖行此刻在列表里的位移（px），已抵消自动滚动的位移 */
+  const dragOffset = drag ? drag.pointerY - drag.startY + (drag.startTop - drag.top) : 0;
+  /**
+   * 落点：插到 `visible[dropIndex]` 之前，等于列表长度时表示末尾。
+   *
+   * 按被拖行的**前缘**算，不按中心、更不按指针：
+   * - 指针贴在被拖行的哪个位置，取决于用户从哪抓起（抓顶部就贴顶边），
+   *   拿它当参照，会把"该换了"拖到盖满之后。
+   * - 中心当参照，要等中心越过下一行的中心才换 —— 那时已经"完全盖住"了。
+   * 前缘（往下拖用底边、往上拖用顶边）一越过下一行的中线，下一行就立刻让位 ——
+   * 也就是"盖住一半就自动上移"，和直觉同步。
+   */
+  const leadingEdge =
+    drag !== null
+      ? dragOffset >= 0
+        ? drag.from * rowH + dragOffset + rowH // 底边
+        : drag.from * rowH + dragOffset // 顶边
+      : 0;
+  const dropIndex =
+    drag !== null
+      ? Math.min(Math.max(Math.round(leadingEdge / rowH), 0), visible.length)
+      : null;
+
+  /**
+   * 这一行要不要给落点让位。被拖行浮起来、离开原位之后，其它行平移一格，
+   * 在落点处让出一个空档 —— 拖到哪，空档开到哪。
+   *
+   * 向下拖（dropIndex > from）：`(from, dropIndex)` 之间的一起上移一格；
+   * 向上拖（dropIndex < from）：`[dropIndex, from)` 之间的一起下移一格。
+   */
+  const shiftFor = (index: number): number => {
+    if (drag === null || dropIndex === null || index === drag.from) return 0;
+    if (drag.from < dropIndex && index > drag.from && index < dropIndex) return -1;
+    if (drag.from > dropIndex && index >= dropIndex && index < drag.from) return 1;
+    return 0;
+  };
 
   // 每次 tick 只让缓存重算翻页的那几个账户，其余直接命中
   useEffect(() => {
@@ -59,28 +117,126 @@ export function ListScreen() {
     };
   }, [visible, now]);
 
-  const drop = (targetId: string, after: boolean) => {
-    const id = dragging;
-    setDragging(null);
-    setOver(null);
-    if (!id || id === targetId) return;
+  /**
+   * FLIP：列表顺序变化（置顶 / 取消置顶 / 改排序）时，让行平滑滑到新位置，
+   * 而不是整表瞬间跳一下。这就是"点置顶整个列表闪一下"的元凶 ——
+   * 其实不是重渲染，是顺序变完那一帧所有行都平移了一格，肉眼看起来像闪。
+   *
+   * 拖拽不在这里管：它有自己的"让位"动画，硬套 FLIP 会把行往回拽。
+   *
+   * 这里**不设依赖**，每次 commit 都重测一遍位置：像「还没设密码」提示条这种
+   * 异步冒出来的元素会让列表整体下移 48px，若只在 `visible` 变化时才重测，
+   * 旧位置会一直差 48px，下次置顶时所有行都被误判成"移过了"。每帧重测，
+   * 250ms 的 tick 会很快把新布局追上；再配合下面的"只动画整数个行高"，
+   * 48px 这种非换位的布局变化既不会闪、也不会把真换位算错。
+   */
+  const positions = useRef<Map<string, number>>(new Map());
+  const wasDragging = useRef(false);
 
+  useLayoutEffect(() => {
+    const root = listRef.current;
+    if (!root) return;
+
+    const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-account-id]'));
+    const next = new Map<string, number>();
+    for (const el of rows) next.set(el.dataset.accountId!, el.offsetTop);
+
+    const justDropped = wasDragging.current && drag === null;
+    wasDragging.current = drag !== null;
+
+    // 拖拽中 / 拖拽刚结束：行的视觉位置由 shift / 落位负责，这里只跟踪真实位置
+    if (drag !== null || justDropped) {
+      positions.current = next;
+      return;
+    }
+
+    // 第一帧没有历史位置，只记录、不动画
+    if (positions.current.size !== 0) {
+      // 只动画「整数个行高」的位移：置顶/改排序把行移动整数行；提示条出现这类
+      // 布局变化是任意像素（48px），不该被当成"这一行被挪了"去播放
+      const shouldMove = (el: HTMLElement) => {
+        const prev = positions.current.get(el.dataset.accountId!);
+        if (prev === undefined) return false;
+        const delta = prev - el.offsetTop;
+        return delta !== 0 && delta % rowH === 0;
+      };
+      // 先反向摆回旧位置（瞬间、无过渡），再强迫重排，下一拍回到新位置带过渡
+      for (const el of rows) {
+        if (!shouldMove(el)) continue;
+        const delta = positions.current.get(el.dataset.accountId!)! - el.offsetTop;
+        el.style.transition = 'none';
+        el.style.transform = `translateY(${delta}px)`;
+      }
+      void root.offsetHeight;
+      for (const el of rows) {
+        if (!shouldMove(el)) continue;
+        el.style.transition = 'transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+        el.style.transform = '';
+      }
+    }
+
+    positions.current = next;
+  });
+
+  const startDrag = (id: string, startY: number) => {
+    const rect = listRef.current?.getBoundingClientRect();
     const from = visible.findIndex((account) => account.id === id);
-    if (from < 0) return;
-    const to = visible.findIndex((account) => account.id === targetId);
-    if (to < 0) return;
+    if (!rect || from < 0) return;
+    pointerRef.current = startY;
+    setDrag({ id, from, startY, pointerY: startY, top: rect.top, startTop: rect.top });
+  };
 
-    // 落点换算成「插到谁前面」；null 表示末尾
-    const beforeId = after ? (visible[to + 1]?.id ?? null) : targetId;
-    // 拖回原位不算改动，别白写一次盘
-    if (beforeId === id || visible[from + 1]?.id === beforeId) return;
+  const moveDrag = (pointerY: number) => {
+    pointerRef.current = pointerY;
+    setDrag((d) => (d ? { ...d, pointerY } : d));
+  };
 
-    // 落盘失败的具体原因（配额、权限）对用户没用，能做的只有"再拖一次"；
-    // 与其把底层报错摊出来，不如直说这次顺序没存上
+  const endDrag = () => {
+    if (drag === null || dropIndex === null) return;
+    setDrag(null);
+    commit(drag.id, drag.from, dropIndex);
+  };
+
+  /**
+   * 真正落地：把「插到第几条之前」换算成 vault 的 `beforeId`。
+   * 要在**去掉被拖的那一条之后**的列表里取邻居，否则向下拖会永远差一位
+   * （落点指向自己）。
+   */
+  const commit = (id: string, from: number, index: number) => {
+    const rest = visible.filter((account) => account.id !== id);
+    const beforeId = rest[from < index ? index - 1 : index]?.id ?? null;
+    // 去掉自己之后，紧随其后的那一条没变 = 拖回原位，别白写一次盘
+    if (rest[from]?.id === beforeId) return;
     void reorderAccount(id, beforeId).catch(() => {
       showToast('toast.reorder-failed', { tone: 'danger' });
     });
+    setLanded(id);
   };
+
+  // 拖到列表上下边缘时自动滚动：长列表拖不到目标行，就只能一屏一屏地"挪过去再拖"
+  useEffect(() => {
+    if (drag === null) return;
+    const timer = window.setInterval(() => {
+      const y = pointerRef.current;
+      const margin = 72;
+      let step = 0;
+      if (y < margin) step = -Math.max(1, Math.round((margin - y) / 6));
+      else if (y > window.innerHeight - margin) step = Math.max(1, Math.round((y - (window.innerHeight - margin)) / 6));
+      if (step !== 0) {
+        window.scrollBy(0, step);
+        const rect = listRef.current?.getBoundingClientRect();
+        if (rect) setDrag((d) => (d ? { ...d, top: rect.top } : d));
+      }
+    }, 16);
+    return () => window.clearInterval(timer);
+  }, [drag === null]);
+
+  // 落位反馈只闪一次：600ms 后撤掉，免得下一次拖动前它还挂着
+  useEffect(() => {
+    if (!landed) return;
+    const timer = setTimeout(() => setLanded(null), 600);
+    return () => clearTimeout(timer);
+  }, [landed]);
 
   // 主题切换是"点一下立刻生效"，存盘失败要当场说一句，不能静默掉
   const switchTheme = (theme: 'light' | 'dark') => {
@@ -102,13 +258,9 @@ export function ListScreen() {
       <header className="sticky top-0 z-10 border-b border-separator bg-bg/95 px-4 pb-2 pt-3 backdrop-blur">
         <div className="flex items-center gap-2">
           {/* 图标 + 标题：参考实现的标题栏是有牌面的，
-              一个纯文字标题在 400px 的弹窗里会显得像"页签"而不是"应用" */}
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-accent text-white"
-          >
-            <KeyIcon size={16} />
-          </span>
+              一个纯文字标题在 400px 的弹窗里会显得像"页签"而不是"应用"。
+              标记本身自带底色，不再套一层方块 —— 圆外面再包圆角方会变成两层边框 */}
+          <AppMark size={20} className="shrink-0 text-accent" />
           <h1 className="text-[17px] font-semibold tracking-tight">{t('app.name')}</h1>
 
           <div className="ml-auto flex items-center gap-1">
@@ -162,17 +314,6 @@ export function ListScreen() {
         className={`flex-1 ${
           accounts.length === 0 || settings.style === 'modern' ? 'px-4 pt-2' : 'pt-1.5'
         }`}
-        onDragOver={(event) => {
-          if (!dragging) return;
-          event.preventDefault();
-        }}
-        // 拖到空白处等于移到末尾，否则"想放到最后一条之后"就只能先拖到倒数第二条
-        onDrop={(event) => {
-          if (!dragging) return;
-          event.preventDefault();
-          const last = visible[visible.length - 1];
-          if (last) drop(last.id, true);
-        }}
       >
         {visible.length === 0 ? (
           // 两类"空"必须分开：一条都没有时给分诊引导，搜不到时只解释搜索
@@ -186,39 +327,39 @@ export function ListScreen() {
              行本身不带底色，hover 时铺一层 row-hover —— 这一档必须比页面底深，
              否则 hover 行会和弹窗背景撞色，卡片像被咬掉一块。
              经典版式反过来：不留边距、不切圆角、分隔线通栏，一屏能多读一行 */
-          <div
-            className={
-              settings.style === 'modern'
-                ? 'mb-4 overflow-hidden rounded-card bg-surface'
-                : 'bg-surface [--row-divider-inset:0px]'
-            }
-          >
-            {visible.map((account) => (
-              <AccountRow
-                key={account.id}
-                account={account}
-                code={codes.get(account.id)?.code ?? ''}
-                remaining={remainingOf(account)}
-                view={settings.view}
-                style={settings.style}
-                showInitials={settings.showInitials}
-                draggable={manual}
-                dragging={dragging === account.id}
-                dropEdge={
-                  over && over.id === account.id && dragging !== account.id
-                    ? over.after
-                      ? 'bottom'
-                      : 'top'
-                    : null
-                }
-                onDragStart={setDragging}
-                onDragEnd={() => {
-                  setDragging(null);
-                  setOver(null);
-                }}
-                onDrop={drop}
-              />
-            ))}
+          <div ref={listRef} className={`${drag !== null ? 'is-dragging' : ''}`}>
+            <div
+              className={
+                settings.style === 'modern'
+                  ? // 拖拽时打开 overflow：被拖行会浮起来、超出卡片上下沿，
+                    // 还开着 overflow-hidden 会被圆角卡一刀
+                    `mb-4 rounded-card bg-surface ${drag !== null ? 'overflow-visible' : 'overflow-hidden'}`
+                  : 'bg-surface [--row-divider-inset:0px]'
+              }
+            >
+              {visible.map((account, index) => {
+                const isSource = drag?.id === account.id;
+                return (
+                  <AccountRow
+                    key={account.id}
+                    account={account}
+                    code={codes.get(account.id)?.code ?? ''}
+                    remaining={remainingOf(account)}
+                    view={settings.view}
+                    style={settings.style}
+                    showInitials={settings.showInitials}
+                    draggable={manual}
+                    dragging={isSource}
+                    dragOffset={isSource ? dragOffset : 0}
+                    shift={shiftFor(index)}
+                    onDragStart={startDrag}
+                    onDragMove={moveDrag}
+                    onDragEnd={endDrag}
+                    landed={landed === account.id}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
       </main>

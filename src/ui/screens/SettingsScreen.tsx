@@ -3,14 +3,14 @@ import type { ReactNode } from 'react';
 import type { ClipboardClear, Settings, UiStyle } from '@/core/types';
 import { getExtensionVersion } from '@/platform/env';
 import { backupStatus } from '@/platform/vault-service';
-import { Button, TextButton } from '../components/Button';
 import { ChevronRightIcon } from '../components/Icons';
-import { PasswordInput } from '../components/PasswordInput';
+import { CardGroup, InfoRow } from '../components/Card';
+import { LanguageMenu } from '../components/LanguageMenu';
+import { PasswordDialog } from '../components/PasswordDialog';
+import type { PasswordAction } from '../components/PasswordDialog';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Switch } from '../components/Switch';
 import { Segmented } from '../components/TextInput';
-import { describeError, useMessage } from '../errors';
-import type { Message } from '../errors';
 import { useT } from '../i18n';
 import { useAppStore, useSettings, useTrash } from '../store';
 
@@ -60,13 +60,22 @@ export function SettingsScreen() {
 
   return (
     <div className="flex min-h-[280px] flex-col bg-bg pb-6">
-      <ScreenHeader title={t('settings.title')} onBack={closeSheet} />
+      <ScreenHeader
+        title={t('settings.title')}
+        onBack={closeSheet}
+        action={
+          <LanguageMenu
+            value={settings.language}
+            onChange={(language) => update({ language })}
+          />
+        }
+      />
 
       <div className="pt-4">
         {/* 备份排第一：这一页里只有它管"数据会不会丢"，也只有在换机、
             重装、清缓存这些时刻才会被想起来 —— 越急的事越不该靠滚动去找。
             其余分组是"用起来舒不舒服"，排在后面 */}
-        <Group title={t('settings.section.backup')}>
+        <CardGroup title={t('settings.section.backup')}>
           <Item label={t('settings.autobackup')} hint={t('settings.autobackup.hint')} inline>
             <Switch
               label={t('settings.autobackup')}
@@ -105,9 +114,9 @@ export function SettingsScreen() {
               {t('settings.backup.hint')}
             </p>
           </div>
-        </Group>
+        </CardGroup>
 
-        <Group title={t('settings.section.trash')}>
+        <CardGroup title={t('settings.section.trash')}>
           <button
             type="button"
             className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors duration-150 hover:bg-surface-alt"
@@ -119,9 +128,9 @@ export function SettingsScreen() {
               <ChevronRightIcon size={14} className="text-fg-muted" />
             </span>
           </button>
-        </Group>
+        </CardGroup>
 
-        <Group title={t('settings.section.display')}>
+        <CardGroup title={t('settings.section.display')}>
           {/* 风格排在最前面：它决定列表的整体骨架，先选骨架再选细节 */}
           <Item label={t('settings.style')} hint={t('settings.style.hint')}>
             <StylePicker
@@ -160,23 +169,9 @@ export function SettingsScreen() {
               ]}
             />
           </Item>
-          {/* 语言放在「显示」里而不是单开一块：它和主题一样属于"界面长什么样"，
-              而且和主题一样改了立刻生效、不需要重开弹窗 */}
-          <Item label={t('settings.language')}>
-            <Segmented
-              ariaLabel={t('settings.language')}
-              value={settings.language}
-              onChange={(language) => update({ language })}
-              options={[
-                { value: 'system' as const, label: t('language.system') },
-                { value: 'zh' as const, label: t('language.zh') },
-                { value: 'en' as const, label: t('language.en') },
-              ]}
-            />
-          </Item>
-        </Group>
+        </CardGroup>
 
-        <Group title={t('settings.section.sort')}>
+        <CardGroup title={t('settings.section.sort')}>
           <Item label={t('settings.sort')} hint={t('settings.sort.hint')}>
             <Segmented
               ariaLabel={t('settings.sort')}
@@ -189,9 +184,9 @@ export function SettingsScreen() {
               ]}
             />
           </Item>
-        </Group>
+        </CardGroup>
 
-        <Group title={t('settings.section.security')}>
+        <CardGroup title={t('settings.section.security')}>
           <Item label={t('settings.autolock')}>
             <Segmented
               ariaLabel={t('settings.autolock')}
@@ -206,9 +201,9 @@ export function SettingsScreen() {
             />
           </Item>
           <PasswordItem enabled={canRecover} />
-        </Group>
+        </CardGroup>
 
-        <Group title={t('settings.section.clipboard')}>
+        <CardGroup title={t('settings.section.clipboard')}>
           <Item label={t('settings.clipboard')} hint={t('settings.clipboard.hint')}>
             <Segmented
               ariaLabel={t('settings.clipboard')}
@@ -222,18 +217,27 @@ export function SettingsScreen() {
               ]}
             />
           </Item>
-        </Group>
+        </CardGroup>
 
-        <Group title={t('settings.section.about')}>
-          <div className="space-y-2 px-4 py-3.5">
-            <Row label={t('settings.version')} value={getExtensionVersion()} />
-            <Row label={t('settings.storage')} value={t('settings.storage.value')} />
-            <Row label={t('settings.network')} value={t('settings.network.value')} />
+        {/* 只在设置页留两行：版本是这一页里唯一「会变的事实」，
+            隐私那些承诺归到下一行的入口里 —— 它们是宣言，读一遍就够，
+            不该每次打开设置都在同一页里读第二遍 */}
+        <CardGroup title={t('settings.section.about')}>
+          <div className="px-4 py-3.5">
+            <InfoRow label={t('settings.version')} value={getExtensionVersion()} />
           </div>
-          <div className="px-4 pb-3.5">
-            <p className="text-[12px] leading-relaxed text-fg-muted">{t('settings.about.hint')}</p>
-          </div>
-        </Group>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors duration-150 hover:bg-surface-alt"
+            onClick={() => openSheet({ kind: 'privacy' })}
+          >
+            <span className="text-[14px] text-fg">{t('settings.privacy')}</span>
+            <span className="flex shrink-0 items-center gap-1 text-[13px] text-fg-muted">
+              {t('settings.privacy.value')}
+              <ChevronRightIcon size={14} className="text-fg-muted" />
+            </span>
+          </button>
+        </CardGroup>
       </div>
     </div>
   );
@@ -317,21 +321,6 @@ function StylePicker({
   );
 }
 
-/** 一个设置分组：灰底上的一张白卡，标题在卡外 */
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="mb-5">
-      {/* 标题比卡内文字再靠左 8px：缩进 24px，卡内文字 32px。
-          完全对齐时标题看着像卡里的第一行内容，分组的分界感反而没了；
-          再往左（px-5 = 20px）就贴到卡片圆角上了。
-          颜色和字重也提一档：13px/600 + --fg-secondary，
-          纯 --fg-muted 做标题太虚，一页扫下来抓不住有哪几组 */}
-      <h2 className="mb-2 px-6 text-[13px] font-semibold text-fg-secondary">{title}</h2>
-      <div className="card-divide mx-4 overflow-hidden rounded-card bg-surface">{children}</div>
-    </section>
-  );
-}
-
 /**
  * 卡片里的一行。
  *
@@ -384,156 +373,55 @@ function PillButton({ onClick, children }: { onClick: () => void; children: Reac
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-[13px] text-fg-muted">{label}</dt>
-      <dd className="text-[13px] text-fg">{value}</dd>
-    </div>
-  );
-}
-
-/** 密码保护：开启 / 修改 / 关闭。三种状态互斥，用同一个面板切换。 */
+/**
+ * 密码保护：开启 / 修改 / 关闭。
+ *
+ * 三个动作都走同一个对话框（见 `PasswordDialog`），卡片里只留入口和当前状态。
+ * 以前是就地展开：一展开就把下面所有分组顶下去，改完还得再滚回来确认自己
+ * 刚才改的是哪一项。而且三种状态下卡片的行高不一样，来回切会整页跳。
+ */
 function PasswordItem({ enabled }: { enabled: boolean }) {
   const t = useT();
-  const message = useMessage();
-  const setPassword = useAppStore((s) => s.setPassword);
-  const changePassword = useAppStore((s) => s.changePassword);
-  const clearPassword = useAppStore((s) => s.clearPassword);
-  const [mode, setMode] = useState<'idle' | 'set' | 'change' | 'disable'>('idle');
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<Message | null>(null);
-
-  const reset = () => {
-    setMode('idle');
-    setCurrent('');
-    setNext('');
-    setConfirm('');
-    setError(null);
-    setBusy(false);
-  };
-
-  const run = async (action: () => Promise<unknown>) => {
-    setError(null);
-    if (next !== confirm) {
-      setError({ key: 'settings.password-mismatch' });
-      return;
-    }
-    setBusy(true);
-    try {
-      await action();
-      reset();
-    } catch (cause) {
-      setError(describeError(cause));
-      setBusy(false);
-    }
-  };
-
-  if (mode === 'idle') {
-    return (
-      <div className="px-4 py-3.5">
-        {/* 标题和按钮在同一行，说明文字另起一行占满整宽。
-            把说明塞进左侧那一栏里的话，它会被按钮挤到只剩 2/3 宽，
-            一段 3 行的说明会变成 4 行，读起来断断续续 */}
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[14px] text-fg">{t('settings.password')}</span>
-          {enabled ? (
-            <span className="shrink-0 text-[13px] text-fg-muted">{t('settings.password.on')}</span>
-          ) : (
-            <button
-              type="button"
-              className="h-7 shrink-0 rounded-full bg-accent px-3 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-press"
-              onClick={() => setMode('set')}
-            >
-              {t('settings.password.set')}
-            </button>
-          )}
-        </div>
-
-        {/* 未开启时说清代价，而不是只写"未开启" —— 这一行的目的是让人决定要不要开 */}
-        {!enabled && (
-          <p className="mt-1.5 text-[12px] leading-relaxed text-fg-muted">
-            {t('settings.password.off-hint')}
-          </p>
-        )}
-
-        {enabled && (
-          <div className="mt-3 flex gap-2">
-            <PillButton onClick={() => setMode('change')}>{t('settings.password.change')}</PillButton>
-            <PillButton onClick={() => setMode('disable')}>
-              {t('settings.password.disable')}
-            </PillButton>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const [action, setAction] = useState<PasswordAction | null>(null);
 
   return (
-    <div className="space-y-2.5 px-4 py-3.5">
-      <span className="block text-[14px] text-fg">{t('settings.password')}</span>
-      {mode !== 'set' && (
-        <PasswordInput
-          label={t('settings.current-password')}
-          value={current}
-          onChange={setCurrent}
-          autoFocus
-          disabled={busy}
-        />
-      )}
-      {mode !== 'disable' && (
-        <>
-          <PasswordInput
-            label={t('settings.new-password')}
-            value={next}
-            onChange={setNext}
-            autoComplete="new-password"
-            {...(mode === 'set' ? { hint: t('password.hint-long') } : {})}
-            disabled={busy}
-          />
-          <PasswordInput
-            label={t('password.confirm')}
-            value={confirm}
-            onChange={setConfirm}
-            autoComplete="new-password"
-            disabled={busy}
-          />
-        </>
-      )}
-
-      {error && <p className="text-[12px] leading-relaxed text-danger">{message(error)}</p>}
-
-      <div className="space-y-1.5 pt-0.5">
-        <Button
-          variant="primary"
-          disabled={busy}
-          onClick={() => {
-            if (mode === 'set') void run(() => setPassword(next));
-            else if (mode === 'change') void run(() => changePassword(current, next));
-            else void run(() => clearPassword(current));
-          }}
-        >
-          {busy
-            ? t('common.busy')
-            : mode === 'set'
-              ? t('settings.password-submit')
-              : mode === 'change'
-                ? t('settings.password.change')
-                : t('settings.disable-submit')}
-        </Button>
-        <TextButton className="w-full" onClick={reset} disabled={busy}>
-          {t('common.cancel')}
-        </TextButton>
+    <div className="px-4 py-3.5">
+      {/* 标题和按钮在同一行，说明文字另起一行占满整宽。
+          把说明塞进左侧那一栏里的话，它会被按钮挤到只剩 2/3 宽，
+          一段 3 行的说明会变成 4 行，读起来断断续续 */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[14px] text-fg">{t('settings.password')}</span>
+        {enabled ? (
+          <span className="shrink-0 text-[13px] text-fg-muted">{t('settings.password.on')}</span>
+        ) : (
+          <button
+            type="button"
+            className="h-7 shrink-0 rounded-full bg-accent px-3 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-press"
+            onClick={() => setAction('set')}
+          >
+            {t('settings.password.set')}
+          </button>
+        )}
       </div>
 
-      {mode === 'disable' && (
-        <p className="text-[12px] leading-relaxed text-fg-muted">
-          {t('settings.password.disable-hint')}
+      {/* 未开启时说清代价，而不是只写"未开启" —— 这一行的目的是让人决定要不要开 */}
+      {!enabled && (
+        <p className="mt-1.5 text-[12px] leading-relaxed text-fg-muted">
+          {t('settings.password.off-hint')}
         </p>
       )}
+
+      {enabled && (
+        <div className="mt-3 flex gap-2">
+          <PillButton onClick={() => setAction('change')}>{t('settings.password.change')}</PillButton>
+          <PillButton onClick={() => setAction('disable')}>
+            {t('settings.password.disable')}
+          </PillButton>
+        </div>
+      )}
+
+      {action && <PasswordDialog action={action} onClose={() => setAction(null)} />}
     </div>
   );
 }
+

@@ -77,6 +77,13 @@ export default {
           '25%': { transform: 'translateX(-6px)' },
           '75%': { transform: 'translateX(6px)' },
         },
+        // 拖拽落位：被移动的那一行整块泛一下 accent 底色再退掉。
+        // 顺序是瞬间变过来的，没有这一下，眼睛会在原位置找那串验证码 ——
+        // 它已经跑到别处去了。只染底色、不加位移，免得和拖拽本身的位移打架
+        'row-land': {
+          from: { backgroundColor: 'rgb(var(--accent) / 0.14)' },
+          to: { backgroundColor: 'rgb(var(--accent) / 0)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 150ms ease-out',
@@ -86,6 +93,7 @@ export default {
         'rise-in': 'rise-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards',
         'sheet-in': 'sheet-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards',
         shake: 'shake 300ms ease-in-out',
+        'row-land': 'row-land 600ms ease-out',
       },
     },
   },

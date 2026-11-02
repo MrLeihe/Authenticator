@@ -34,7 +34,7 @@ export function RecoveryCodeSheet({ code, onDone }: { code: string; onDone: () =
 
   const handleDownload = () => {
     // 单独的前缀：恢复码文件不该和账户备份文件长得一样，免得混在一起
-    const name = exportFileName('txt', new Date(), 'sixring-recovery');
+    const name = exportFileName('txt', new Date(), 'authenticator-recovery');
     downloadText(name, `${code}\n`, 'text/plain');
   };
 

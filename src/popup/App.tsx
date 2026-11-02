@@ -1,5 +1,6 @@
 import { Component, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { hasOpenOverlay } from '@/ui/overlay';
 import { RecoveryCodeSheet } from '@/ui/components/RecoveryCodeSheet';
 import { useAutoLock } from '@/ui/hooks/useAutoLock';
 import { AddAccountScreen } from '@/ui/screens/AddAccountScreen';
@@ -10,6 +11,7 @@ import { GuideScreen } from '@/ui/screens/GuideScreen';
 import { ImportScreen } from '@/ui/screens/ImportScreen';
 import { ListScreen } from '@/ui/screens/ListScreen';
 import { LockScreen } from '@/ui/screens/LockScreen';
+import { PrivacyScreen } from '@/ui/screens/PrivacyScreen';
 import { SettingsScreen } from '@/ui/screens/SettingsScreen';
 import { TrashScreen } from '@/ui/screens/TrashScreen';
 import { Toast } from '@/ui/components/Toast';
@@ -116,6 +118,8 @@ function sheetLabel(sheet: Sheet): MessageKey {
       return 'delete.title';
     case 'settings':
       return 'settings.title';
+    case 'privacy':
+      return 'privacy.title';
     case 'trash':
       return 'trash.title';
     case 'export':
@@ -180,7 +184,9 @@ function SheetView({ sheet }: { sheet: Sheet }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // 有浮层（弹窗 / 下拉菜单）压在上面时 Esc 归它，这里不许跟着退 ——
+      // 否则在设置页里按一下 Esc 会把「语言下拉」和整个设置页一起关掉
+      if (event.key !== 'Escape' || event.defaultPrevented || hasOpenOverlay()) return;
       event.preventDefault();
       back();
     };
@@ -213,6 +219,7 @@ function SheetView({ sheet }: { sheet: Sheet }) {
       {sheet.kind === 'guide' && <GuideScreen guide={sheet.guide} />}
       {sheet.kind === 'edit' && <EditAccountScreen id={sheet.id} />}
       {sheet.kind === 'settings' && <SettingsScreen />}
+      {sheet.kind === 'privacy' && <PrivacyScreen />}
       {sheet.kind === 'trash' && <TrashScreen />}
       {sheet.kind === 'export' && <ExportScreen />}
       {sheet.kind === 'import' && <ImportScreen initialText={sheet.text} />}

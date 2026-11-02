@@ -165,6 +165,7 @@ const zh = {
   'row.unpin': '取消置顶',
   'row.edit': '编辑',
   'row.delete': '删除',
+  'row.drag-hint': '拖动排序',
 
   // ---------------------------------------------------------------- 提示条
   'toast.added': '已添加账户',
@@ -324,11 +325,12 @@ const zh = {
   'settings.password.change': '修改密码',
   'settings.password.disable': '关闭密码',
   'settings.password.off-hint': '现在数据已经加密存放，只是打开时不再问密码。设了密码，别人拿到这台电脑也看不到验证码。',
+  'settings.password.set-hint': '设好之后会立刻上锁，用新密码进来一次；同时给你一份恢复码，忘了密码就靠它。',
+  'settings.password.change-hint': '改完会立刻上锁，用新密码进来一次；恢复码也会换成新的一份。',
   'settings.current-password': '当前密码',
   'settings.new-password': '新密码',
   'settings.password-submit': '设好，继续',
   'settings.disable-submit': '关闭密码保护',
-  'settings.password-mismatch': '两次输入的新密码不一致',
   'settings.password.disable-hint': '关闭后数据仍然加密存放，但打开扩展时不再需要密码，恢复码也会一并作废。',
   'settings.section.clipboard': '剪贴板',
   'settings.clipboard': '复制验证码后自动清空',
@@ -352,11 +354,28 @@ const zh = {
   'settings.trash.empty': '空',
   'settings.section.about': '关于',
   'settings.version': '版本',
-  'settings.storage': '数据存放',
-  'settings.storage.value': '仅本机，加密存储',
-  'settings.network': '网络请求',
-  'settings.network.value': '无',
-  'settings.about.hint': '没有账号、没有云端、没有任何统计。验证码全部在本机算出来。',
+  'settings.privacy': '隐私与数据',
+  'settings.privacy.value': '不联网 · 不上报',
+
+  // ---------------------------------------------------------------- 隐私
+  'privacy.title': '隐私与数据',
+  'privacy.section.promise': '三条底线',
+  'privacy.network.title': '不联网',
+  'privacy.network.hint':
+    '没有服务器、没有账号、没有云端，也没有任何统计或第三方 SDK。扩展连网络权限都没有申请。',
+  'privacy.local.title': '密钥不离开这台电脑',
+  'privacy.local.hint':
+    '账户以 AES-256-GCM 密文存在浏览器本地；解锁状态只放在内存里，浏览器一关就消失。',
+  'privacy.offline.title': '验证码在本机算',
+  'privacy.offline.hint': '每个 6 位数字都由这台电脑算出，任何时候都不会发送出去。',
+  'privacy.section.permissions': '用到的权限',
+  'privacy.perm.storage': '存储',
+  'privacy.perm.storage.hint': '保存加密后的账户、设置和每日备份。',
+  'privacy.perm.tab': '当前标签页',
+  'privacy.perm.tab.hint':
+    '只在「扫描此页二维码」时截取一帧画面，只经过内存，识别完就丢。不按那个按钮就不会截。',
+  'privacy.policy': '完整隐私政策',
+  'privacy.feedback': '反馈问题',
 
   // ---------------------------------------------------------------- 导出
   'export.title': '导出',
@@ -572,6 +591,7 @@ const en: Record<MessageKey, string> = {
   'row.unpin': 'Unpin',
   'row.edit': 'Edit',
   'row.delete': 'Delete',
+  'row.drag-hint': 'Drag to reorder',
 
   'toast.added': 'Account added',
   'toast.saved': 'Saved',
@@ -721,11 +741,12 @@ const en: Record<MessageKey, string> = {
   'settings.password.change': 'Change password',
   'settings.password.disable': 'Remove password',
   'settings.password.off-hint': 'Data is already encrypted at rest; the extension just does not ask for a password. With one set, whoever picks up this computer sees no codes.',
+  'settings.password.set-hint': 'Setting one locks the vault right away — unlock once with it. You also get a recovery code in case you forget it.',
+  'settings.password.change-hint': 'Changing it locks the vault right away — unlock once with the new one. The recovery code is reissued too.',
   'settings.current-password': 'Current password',
   'settings.new-password': 'New password',
   'settings.password-submit': 'Save and continue',
   'settings.disable-submit': 'Remove password protection',
-  'settings.password-mismatch': 'The new passwords do not match',
   'settings.password.disable-hint': 'Data stays encrypted at rest, but the extension stops asking for a password and the recovery code is voided.',
   'settings.section.clipboard': 'Clipboard',
   'settings.clipboard': 'Clear the clipboard after copying',
@@ -749,11 +770,28 @@ const en: Record<MessageKey, string> = {
   'settings.trash.empty': 'Empty',
   'settings.section.about': 'About',
   'settings.version': 'Version',
-  'settings.storage': 'Data location',
-  'settings.storage.value': 'This computer only, encrypted',
-  'settings.network': 'Network requests',
-  'settings.network.value': 'None',
-  'settings.about.hint': 'No accounts, no cloud, no analytics. Every code is computed on this machine.',
+  'settings.privacy': 'Privacy & data',
+  'settings.privacy.value': 'Offline · No reporting',
+
+  'privacy.title': 'Privacy & data',
+  'privacy.section.promise': 'The basics',
+  'privacy.network.title': 'No network',
+  'privacy.network.hint':
+    'No server, no account, no cloud, no analytics and no third-party SDK. The extension does not even request the network permission.',
+  'privacy.local.title': 'Secrets stay on this computer',
+  'privacy.local.hint':
+    'Accounts are stored encrypted with AES-256-GCM in the browser. The unlocked state lives in memory only and is gone when the browser closes.',
+  'privacy.offline.title': 'Codes are computed here',
+  'privacy.offline.hint':
+    'Every 6-digit code is generated on this machine. Nothing is ever sent anywhere.',
+  'privacy.section.permissions': 'Permissions used',
+  'privacy.perm.storage': 'Storage',
+  'privacy.perm.storage.hint': 'To save the encrypted accounts, settings and daily backups.',
+  'privacy.perm.tab': 'Active tab',
+  'privacy.perm.tab.hint':
+    'Only when you press "Scan this page": one frame is captured, decoded in memory and discarded. Nothing is captured unless you press that button.',
+  'privacy.policy': 'Full privacy policy',
+  'privacy.feedback': 'Report an issue',
 
   'export.title': 'Export',
   'export.empty': 'No accounts yet, so there is nothing to export. Add one first.',

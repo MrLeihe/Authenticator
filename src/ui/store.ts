@@ -29,7 +29,8 @@ import {
   touchUnlocked,
   unlockWithPassword as unlockVaultWithPassword,
 } from '@/platform/vault-service';
-import { DEMO_ACCOUNTS } from './fixtures/demo';
+// fixtures 只在 maybeSeedDemo 里按需动态 import —— 顶层引会把那 20 条假账户
+// 带进生产 bundle（见 maybeSeedDemo 的说明）
 // 只借类型：值导出会形成 store → i18n → store 的运行时环。`verbatimModuleSyntax`
 // 保证这行被整句擦掉，编译产物里不会留下 require。
 import type { MessageKey, Vars } from './i18n';
@@ -59,6 +60,8 @@ export type Sheet =
   | { kind: 'delete'; id: string }
   | { kind: 'trash' }
   | { kind: 'settings' }
+  /** 隐私与数据：设置页「关于」那只留一行入口，具体条款收在这里 */
+  | { kind: 'privacy' }
   // 导出入是从设置里进来的：返回时回到设置，而不是直接掉回列表
   | { kind: 'export'; from?: 'settings' }
   /**
@@ -291,6 +294,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 导入/导出/最近删除都是从设置里进来的：返回时回到设置，而不是直接掉回列表
     if (
       sheet.kind === 'trash' ||
+      sheet.kind === 'privacy' ||
       ((sheet.kind === 'export' || sheet.kind === 'import') && sheet.from === 'settings')
     ) {
       set({ sheet: { kind: 'settings' } });
@@ -424,8 +428,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 /**
  * dev 预览用的假数据：只在开发构建 + URL 带 `?demo` 时，把示例账户塞进
- * 空保险库里看一眼列表。生产构建里 `import.meta.env.DEV` 是常量 false，
- * 这段连同 fixtures 一起被摇掉，不会有一条真实数据写进用户存储。
+ * 空保险库里看一眼列表。
+ *
+ * fixtures 走**动态 import**，不是顶层 import：只有这样 Vite 才会把它切成
+ * 一个独立 chunk，在生产构建里因为 `import.meta.env.DEV` 恒为 false 而整个丢掉。
+ * 顶层 import + 函数开头早退是不够的 —— 实测下来那 20 条假账户的字符串
+ * 会原样留在主 bundle 里（守卫生效、跑不到，但确实在包里）。
  */
 async function maybeSeedDemo(vault: Vault): Promise<Vault> {
   if (!import.meta.env.DEV) return vault;
@@ -433,6 +441,7 @@ async function maybeSeedDemo(vault: Vault): Promise<Vault> {
   if (typeof location === 'undefined' || !new URLSearchParams(location.search).has('demo')) {
     return vault;
   }
+  const { DEMO_ACCOUNTS } = await import('./fixtures/demo');
   const seeded: Vault = { ...vault, accounts: DEMO_ACCOUNTS.map((a) => ({ ...a })) };
   await saveVault(seeded);
   return seeded;
