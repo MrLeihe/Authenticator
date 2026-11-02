@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <title>Sixring 商店素材</title>
+    <title>身份验证器 商店素材</title>
     <!--
       商店截图的排版稿。
 
@@ -116,7 +116,9 @@
       .frame {
         position: absolute;
         left: 372px;
-        width: 200px;
+        /* 与下面 img 的宽度保持一致：原图就是 400 宽的弹窗，靠 width 缩到 62.5%。
+           两者不等宽时 overflow 会把弹窗右边切掉一条（倒计时环首当其冲） */
+        width: 250px;
         overflow: hidden;
         border-radius: 7px;
         box-shadow:
@@ -163,7 +165,7 @@
       const SHOTS = {
         '1': {
           file: '1-list',
-          height: 300,
+          height: 311,
           eyebrow: 'Account list',
           title: '一屏看完所有验证码',
           body: '点一下就复制，环形倒计时告诉你还剩几秒。搜索、置顶、拖拽排序都在列表上。',
@@ -171,7 +173,7 @@
         },
         '2': {
           file: '2-dark',
-          height: 300,
+          height: 311,
           eyebrow: 'Dark mode',
           title: '暗色不是简单反色',
           body: '背景、卡片、分隔线与强调色各自取过值，黑底上验证码依然一眼可读。',
@@ -179,7 +181,7 @@
         },
         '3': {
           file: '3-scan',
-          height: 202,
+          height: 237,
           eyebrow: 'Add by screenshot',
           // 左栏只有 232px 宽，21px 字号一行最多九个汉字；
           // 多一个字就会把最后的"来"甩到第二行，看起来像排版出错
@@ -188,8 +190,8 @@
           bullets: ['图片在本地解码，不申请摄像头', '不联网、不上传图片', '识别失败会说清是哪一步'],
         },
         '4': {
-          file: '4-onboard',
-          height: 202,
+          file: '4-backup',
+          height: 285,
           eyebrow: 'Local & encrypted',
           title: '密钥只加密存在本地',
           body: '不同步、不上传，也没有服务器能看到你的密钥。密码可以不设，设了就有恢复码兜底。',
@@ -204,7 +206,7 @@
         stage.innerHTML = `
           <div class="promo">
             <img class="mark" src="/icons/128.png" alt="" />
-            <h1>Sixring</h1>
+            <h1>身份验证器</h1>
             <p>两步验证器 · 本地生成，不联网</p>
             <div class="chips">
               <span>无账号</span><span>无内购</span><span>可选加密</span>
@@ -217,7 +219,7 @@
           <div class="shot">
             <div class="brand">
               <img src="/icons/128.png" alt="" />
-              <span>Sixring</span>
+              <span>身份验证器</span>
             </div>
             <div class="copy">
               <div class="eyebrow">${shot.eyebrow}</div>
