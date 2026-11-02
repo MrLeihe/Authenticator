@@ -1,6 +1,6 @@
 # 隐私政策 · Privacy Policy
 
-**Sixring - 两步验证器**（Chrome 扩展，以下简称"本扩展"）
+**身份验证器 - 本地两步验证**（Chrome 扩展，以下简称"本扩展"）
 
 最后更新：2026-10-30
 
@@ -66,7 +66,7 @@
 
 # Privacy Policy (English)
 
-**Sixring - TOTP Authenticator** (the Chrome extension, "the extension")
+**Authenticator - Local TOTP** (the Chrome extension, "the extension")
 
 Last updated: 2026-10-30
 

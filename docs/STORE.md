@@ -2,12 +2,12 @@
 
 本文件是"照着填就能提交"的清单。所有素材都在仓库里，路径见每节。
 
-- 名称：**Sixring - 两步验证器** / **Sixring - TOTP Authenticator**（`public/_locales/`）
+- 名称：**身份验证器 - 本地两步验证** / **Authenticator - Local TOTP**（`public/_locales/`）
 - 版本：`1.0.0`
 - 类目：生产力工具（Productivity）
 - 语言：中文（简体）、English
 
-> ⚠️ **上架前必须自己再做一次重名与商标检索**（Chrome Web Store 内搜索 `Sixring`、USPTO/EUIPO 商标库、`sixring.com` 之类域名）。本仓库里的名字是候选，检索结论以你查到的为准。
+> ⚠️ **上架前必须自己再做一次重名与商标检索**（Chrome Web Store 内搜索 `身份验证器` / `Authenticator`、USPTO/EUIPO 商标库、`authenticator` 相关域名）。通用名撞名的概率不低，检索结论以你查到的为准。
 
 ---
 
@@ -91,27 +91,29 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 | 截图 1 · 列表 | 1280×800 PNG | `store/screenshot-1-list.png` |
 | 截图 2 · 暗色 | 1280×800 PNG | `store/screenshot-2-dark.png` |
 | 截图 3 · 扫码 | 1280×800 PNG | `store/screenshot-3-scan.png` |
-| 截图 4 · 加密引导 | 1280×800 PNG | `store/screenshot-4-lock.png` |
+| 截图 4 · 备份与恢复 | 1280×800 PNG | `store/screenshot-4-backup.png` |
 | 小宣传图 | 440×280 PNG | `store/promo-440x280.png` |
 
 重新生成：
 
 1. 图标：`python3 scripts/make_icons.py`（纯标准库，手写 PNG，无外部依赖）
-2. 截图：`pnpm dev` 起本地服务，把 `scripts/shots/raw/` 里的弹窗原图放进同一路径，再用浏览器打开 `scripts/shots/board.html?shot=1..4` 和 `?board=promo`，按浏览器 2 倍密度截整屏 —— 排版稿是按成品的一半尺寸写的（640×400 / 220×140），所以出来的 PNG 正好是 1280×800 和 440×280。`scripts/shots/raw/` 是中间产物，不进仓库。
+2. 截图与宣传图：`pnpm dev` 起本地服务后跑 `pnpm shots`。脚本会用 CDP 驱动本机 Chrome 抓四张弹窗原图（`scripts/shots/raw/`，不进仓库），复制一份给 README 用（`docs/images/`），再按 `scripts/shots/board.html` 渲染出 `store/` 里的 1280×800 与 440×280 —— 排版稿按成品一半尺寸写（640×400 / 220×140），2 倍密度截屏，所以不需要任何缩放。
+
+界面每改一次就该重跑一次 `pnpm shots`：`store/` 里的图和 README 里的图是同一批原图，界面动了却只更新其中一边，就会出现「商店图还是老界面」这种打回理由。
 
 截图里的账户名全部是 `example.com` 之类的合成数据，密钥由固定种子生成，**没有一条真实账户**；列表里的验证码在生成截图时也看不出真实密钥（截图为静态图片，码早已过期）。
 
-倒计时环在剩余 ≤4 秒时会变橙并加粗描边 —— 素材里出现一片橙色看起来像在报警。出图前等一次翻页（剩余 25 秒以上）再截；截图链路本身有十几秒的固定开销，想稳住颜色可以在页面里临时把 `Date.now` 钉在一个刚翻页的时刻，截完再恢复。
+倒计时环在剩余 ≤4 秒时会变橙并加粗描边 —— 素材里出现一片橙色看起来像在报警。脚本里已经等过一次翻页（`waitForFreshTick`，剩余 ≥10 秒才截），不需要手工干预。
 
 ## 5. 隐私与合规
 
 | 项 | 位置 / 状态 |
 | --- | --- |
-| 隐私政策 URL | https://github.com/MrLeihe/Authenticator/blob/main/PRIVACY.md （建议后续托管到自己的域名或 GitHub Pages，商店后台要求可公开访问） |
+| 隐私政策 URL | https://github.com/MrLeihe/Authenticator/blob/main/docs/PRIVACY.md （建议后续托管到自己的域名或 GitHub Pages，商店后台要求可公开访问） |
 | 隐私实践表单 | "不收集任何用户数据"；`storage` + `activeTab` 权限；不使用远程代码 |
-| 第三方许可 | `THIRD_PARTY_LICENSES.md`（jsQR，Apache-2.0） |
-| 开源许可 | `LICENSE`（MIT） |
-| 数据披露 | 必须在隐私政策里主动写明 `chrome.storage.session` 的内存态前提（`PRIVACY.md` §3 已写） |
+| 第三方许可 | `docs/THIRD_PARTY_LICENSES.md`（jsQR，Apache-2.0），`pnpm zip` 会把它和 `LICENSE` 一并放进分发包 |
+| 开源许可 | `LICENSE`（MIT），同样随包分发 |
+| 数据披露 | 必须在隐私政策里主动写明 `chrome.storage.session` 的内存态前提（`docs/PRIVACY.md` §3 已写） |
 
 ## 6. 审核备注（Reviewer notes，可填一段）
 
@@ -119,9 +121,9 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 
 ## 7. 提交前自查
 
-- [x] `pnpm test && pnpm typecheck && pnpm build` 全绿（216 断言 / 11 个测试文件）
+- [x] `pnpm test && pnpm typecheck && pnpm build` 全绿（244 断言 / 13 个测试文件）
 - [x] 产物里没有 `localhost` 残留（`grep -r localhost dist` 为空）
-- [x] `pnpm zip` 产出 `sixring-1.0.0.zip`（约 170 KB，已剔除 `.map`，19 个文件），上传的就是这个包
+- [x] `pnpm zip` 产出 `authenticator-<package.json 里的版本>.zip`（约 185 KB，已剔除 `.map`，并附带 `LICENSE` 与 `THIRD_PARTY_LICENSES.md`），上传的就是这个包
 - [x] `manifest.json` 里只有 `storage` + `activeTab` 两个权限，无 `host_permissions`
 - [x] 素材尺寸核对：截图 4 张均 1280×800、宣传图 440×280、图标 128×128
 - [x] 商店图标与工具栏图标是同一套几何
