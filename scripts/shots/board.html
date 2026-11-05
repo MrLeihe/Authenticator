@@ -162,73 +162,147 @@
   <body>
     <div id="stage"></div>
     <script type="module">
+      /**
+       * 两种语言的排版稿共用一套骨架，只有文案和弹窗原图不同。
+       *
+       * `height` 是弹窗在稿子里的可见高度（稿子 640×400，弹窗按 62.5% 缩放，
+       * 所以 400px 弹窗 → 250px 宽）。每种语言各一个值：同样的界面在英文下
+       * 换行位置不同，卡片底边会上下挪，硬套中文的值会切出半行。
+       */
       const SHOTS = {
         '1': {
           file: '1-list',
-          height: 311,
-          eyebrow: 'Account list',
-          title: '一屏看完所有验证码',
-          body: '点一下就复制，环形倒计时告诉你还剩几秒。搜索、置顶、拖拽排序都在列表上。',
-          bullets: ['正常 / 紧凑 两档视图', '密钥从不出现在列表里', '顶部一键切明暗主题'],
+          height: { zh: 311, en: 311 },
+          zh: {
+            eyebrow: 'Account list',
+            title: '一屏看完所有验证码',
+            body: '点一下就复制，环形倒计时告诉你还剩几秒。搜索、置顶、拖拽排序都在列表上。',
+            bullets: ['正常 / 紧凑 两档视图', '密钥从不出现在列表里', '顶部一键切明暗主题'],
+          },
+          en: {
+            eyebrow: 'Account list',
+            title: 'Every code, one screen',
+            body: 'Click to copy, and the ring shows how long is left. Search, pin and drag to reorder, all in the list itself.',
+            bullets: [
+              'Normal and compact densities',
+              'Secrets never show in the list',
+              'Light and dark from the top bar',
+            ],
+          },
         },
         '2': {
           file: '2-dark',
-          height: 311,
-          eyebrow: 'Dark mode',
-          title: '暗色不是简单反色',
-          body: '背景、卡片、分隔线与强调色各自取过值，黑底上验证码依然一眼可读。',
-          bullets: ['跟随系统，切了立刻生效', '不用重开弹窗', '颜色全部来自 CSS 变量'],
+          height: { zh: 311, en: 311 },
+          zh: {
+            eyebrow: 'Dark mode',
+            title: '暗色不是简单反色',
+            body: '背景、卡片、分隔线与强调色各自取过值，黑底上验证码依然一眼可读。',
+            bullets: ['跟随系统，切了立刻生效', '不用重开弹窗', '颜色全部来自 CSS 变量'],
+          },
+          en: {
+            eyebrow: 'Dark mode',
+            title: 'Dark is not inverted',
+            body: 'Background, cards, dividers and accent colours are each tuned, so codes stay legible on black.',
+            bullets: [
+              'Follows the system, instantly',
+              'No need to reopen the popup',
+              'Every colour is a CSS variable',
+            ],
+          },
         },
         '3': {
           file: '3-scan',
-          height: 237,
-          eyebrow: 'Add by screenshot',
-          // 左栏只有 232px 宽，21px 字号一行最多九个汉字；
-          // 多一个字就会把最后的"来"甩到第二行，看起来像排版出错
-          title: '贴张截图就能加进来',
-          body: '也可以直接粘贴 otpauth 地址或手动输入。识别结果先进表单，确认了才保存。',
-          bullets: ['图片在本地解码，不申请摄像头', '不联网、不上传图片', '识别失败会说清是哪一步'],
+          height: { zh: 237, en: 237 },
+          zh: {
+            eyebrow: 'Add by screenshot',
+            // 左栏只有 232px 宽，21px 字号一行最多九个汉字；
+            // 多一个字就会把最后的"来"甩到第二行，看起来像排版出错
+            title: '贴张截图就能加进来',
+            body: '也可以直接粘贴 otpauth 地址或手动输入。识别结果先进表单，确认了才保存。',
+            bullets: ['图片在本地解码，不申请摄像头', '不联网、不上传图片', '识别失败会说清是哪一步'],
+          },
+          en: {
+            eyebrow: 'Add by screenshot',
+            title: 'Drop in a screenshot',
+            body: 'Pasting an otpauth link or typing it in works too. A scan always lands in a form first, so nothing is saved until you confirm.',
+            bullets: [
+              'Decoded locally, no camera access',
+              'No network, the image never leaves',
+              'Failures say which step went wrong',
+            ],
+          },
         },
         '4': {
           file: '4-backup',
-          height: 285,
-          eyebrow: 'Local & encrypted',
-          title: '密钥只加密存在本地',
-          body: '不同步、不上传，也没有服务器能看到你的密钥。密码可以不设，设了就有恢复码兜底。',
-          bullets: ['AES-256-GCM，密钥始终密文落盘', '忘记密码可用恢复码找回', '每天自动留一份加密备份'],
+          // 英文的备份卡片比中文高一屏文字：456（中文）会切在说明句中间，
+          // 315 → 504px 弹窗高，正好落在卡片下沿之外、下一个分组标题之上
+          height: { zh: 285, en: 315 },
+          zh: {
+            eyebrow: 'Local & encrypted',
+            title: '密钥只加密存在本地',
+            body: '不同步、不上传，也没有服务器能看到你的密钥。密码可以不设，设了就有恢复码兜底。',
+            bullets: [
+              'AES-256-GCM，密钥始终密文落盘',
+              '忘记密码可用恢复码找回',
+              '每天自动留一份加密备份',
+            ],
+          },
+          en: {
+            eyebrow: 'Local & encrypted',
+            title: 'Secrets stay encrypted',
+            body: 'No sync, no upload, and no server that could read your keys. The password is optional, and a recovery code has your back.',
+            bullets: [
+              'AES-256-GCM, always stored encrypted',
+              'Recovery code if the password is lost',
+              'One encrypted snapshot a day',
+            ],
+          },
         },
       };
 
+      const PROMO = {
+        zh: { name: '身份验证器', tagline: '两步验证器 · 本地生成，不联网', chips: ['无账号', '无内购', '可选加密'] },
+        en: { name: 'Authenticator', tagline: 'Two-factor codes, generated on device', chips: ['No account', 'No IAP', 'Optional encryption'] },
+      };
+
+      const BRAND = { zh: '身份验证器', en: 'Authenticator' };
+
       const params = new URLSearchParams(location.search);
+      const lang = params.get('lang') === 'en' ? 'en' : 'zh';
       const stage = document.getElementById('stage');
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      // 英文套的弹窗原图在 raw/en/ 下，中文套保持在 raw/ 根上（历史产物沿用）
+      const rawDir = lang === 'zh' ? '' : 'en/';
 
       if (params.get('board') === 'promo') {
+        const promo = PROMO[lang];
         stage.innerHTML = `
           <div class="promo">
             <img class="mark" src="/icons/128.png" alt="" />
-            <h1>身份验证器</h1>
-            <p>两步验证器 · 本地生成，不联网</p>
+            <h1>${promo.name}</h1>
+            <p>${promo.tagline}</p>
             <div class="chips">
-              <span>无账号</span><span>无内购</span><span>可选加密</span>
+              ${promo.chips.map((c) => `<span>${c}</span>`).join('')}
             </div>
           </div>`;
       } else {
         const shot = SHOTS[params.get('shot') ?? '1'];
-        const { height: cardHeight } = shot;
+        const copy = shot[lang];
+        const cardHeight = shot.height[lang];
         stage.innerHTML = `
           <div class="shot">
             <div class="brand">
               <img src="/icons/128.png" alt="" />
-              <span>身份验证器</span>
+              <span>${BRAND[lang]}</span>
             </div>
             <div class="copy">
-              <div class="eyebrow">${shot.eyebrow}</div>
-              <h1>${shot.title}</h1>
-              <p>${shot.body}</p>
-              <ul>${shot.bullets.map((b) => `<li>${b}</li>`).join('')}</ul>
+              <div class="eyebrow">${copy.eyebrow}</div>
+              <h1>${copy.title}</h1>
+              <p>${copy.body}</p>
+              <ul>${copy.bullets.map((b) => `<li>${b}</li>`).join('')}</ul>
             </div>
             <div class="frame" style="height:${cardHeight}px;top:${(400 - cardHeight) / 2}px">
-              <img src="/scripts/shots/raw/${shot.file}.png" alt="" />
+              <img src="/scripts/shots/raw/${rawDir}${shot.file}.png" alt="" />
             </div>
           </div>`;
       }

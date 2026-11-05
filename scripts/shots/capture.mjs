@@ -1,13 +1,14 @@
 /**
  * 出图：弹窗截图 + 下载页素材。一条命令跑完，不手工截屏。
  *
- *   pnpm shots          # 抓弹窗 → docs/images/ 与 scripts/shots/raw/ → 渲染 store/
+ *   pnpm shots          # 中文套 + 英文套 → docs/images/ 与 scripts/shots/raw/ → store/
  *   pnpm shots --raw    # 只抓弹窗，不渲染排版稿
  *
  * 为什么不用 Puppeteer：为几张图装一整棵依赖树不值得。这里直接说 CDP，
  * Node 22 自带 WebSocket，零依赖；Chrome 用系统装的那个。
  *
- * 前置：`pnpm dev` 已在 5173 跑着（`?demo` 只在 dev 构建生效）。
+ * 前置：`pnpm dev` 已在跑（`?demo` 只在 dev 构建生效）。端口不是 5173 时用
+ * `SHOTS_BASE=http://localhost:5273 pnpm shots` 覆盖。
  *
  * 几个刻意的细节：
  *   - 视口锁 400 宽、deviceScaleFactor 2，输出 800px 宽的视网膜图；
@@ -17,7 +18,10 @@
  *   - 截图前关掉「还没设密码」提示条：留着会让首图像在报警
  *   - 深色是真去点那个主题按钮，不是往 <html> 上贴 class，走的是产品路径
  *   - 排版稿按 640×400 排版、2 倍密度截屏 → 正好 1280×800，不缩放
+ *   - 英文套不重开页面：界面语言存在加密保险库里，`?demo` 每次重载都会重新播种，
+ *     偏好跟着丢。所以英文那套是「切一次语言，然后靠返回键在应用内走完四屏」
  */
+
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -27,12 +31,16 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '../..');
 const OUT_DOCS = join(ROOT, 'docs/images');
+const OUT_DOCS_EN = join(OUT_DOCS, 'en');
 const OUT_RAW = join(HERE, 'raw');
+const OUT_RAW_EN = join(OUT_RAW, 'en');
 const OUT_STORE = join(ROOT, 'store');
+const OUT_STORE_EN = join(OUT_STORE, 'en');
 const PORT = 9333;
 const PROFILE = '/tmp/authenticator-shots-profile';
-const PAGE = 'http://localhost:5173/src/popup/index.html';
-const BOARD = 'http://localhost:5173/scripts/shots/board.html';
+const BASE = process.env.SHOTS_BASE ?? 'http://localhost:5173';
+const PAGE = `${BASE}/src/popup/index.html`;
+const BOARD = `${BASE}/scripts/shots/board.html`;
 
 const POPUP_WIDTH = 400;
 const POPUP_VIEWPORT = 720;
@@ -45,9 +53,40 @@ const CHROME =
     ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
     : 'google-chrome');
 
+/**
+ * 界面文案 → 选择器。按钮全靠 aria-label 定位，所以每种语言各备一份。
+ * 键名是「意思」，值是各语言下产品自己写的那句话 —— 别在这里硬编码中文。
+ */
+const L = {
+  zh: {
+    dismiss: '关闭这条提示',
+    dark: '切换到深色',
+    light: '切换到浅色',
+    add: '添加账户',
+    settings: '设置',
+    qr: '二维码',
+    language: '界面语言',
+    back: '返回',
+    english: 'English',
+  },
+  en: {
+    dismiss: 'Dismiss this reminder',
+    dark: 'Switch to dark',
+    light: 'Switch to light',
+    add: 'Add account',
+    settings: 'Settings',
+    qr: 'QR code',
+    language: 'Language',
+    back: 'Back',
+    english: 'English',
+  },
+};
+
 const rawOnly = process.argv.includes('--raw');
 
-for (const dir of [OUT_DOCS, OUT_RAW, OUT_STORE]) mkdirSync(dir, { recursive: true });
+for (const dir of [OUT_DOCS, OUT_DOCS_EN, OUT_RAW, OUT_RAW_EN, OUT_STORE, OUT_STORE_EN]) {
+  mkdirSync(dir, { recursive: true });
+}
 rmSync(PROFILE, { recursive: true, force: true });
 
 const chrome = spawn(CHROME, [
@@ -77,7 +116,7 @@ async function pageSocket() {
     }
     await sleep(250);
   }
-  throw new Error('Chrome 调试端口没起来。检查 CHROME_PATH，以及 dev server 是否在 5173。');
+  throw new Error(`Chrome 调试端口没起来。检查 CHROME_PATH，以及 dev server 是否在 ${BASE}。`);
 }
 
 const ws = new WebSocket(await pageSocket());
@@ -118,10 +157,10 @@ async function evaluate(expression) {
   return res.result.value;
 }
 
-const click = (selector) =>
+const click = (label) =>
   evaluate(`(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
-    if (!el) throw new Error('找不到 ' + ${JSON.stringify(selector)});
+    const el = document.querySelector('button[aria-label=${JSON.stringify(label)}]');
+    if (!el) throw new Error('找不到按钮 ' + ${JSON.stringify(label)});
     el.click();
     return true;
   })()`);
@@ -148,7 +187,7 @@ await send('Page.enable');
 await send('Runtime.enable');
 
 /** 打开弹窗 → 等列表渲染出验证码 → 关掉提示条 → 等动画稳定 */
-async function open(url) {
+async function open(url, lang) {
   await send('Page.navigate', { url });
   for (let i = 0; i < 80; i += 1) {
     await sleep(150);
@@ -159,9 +198,9 @@ async function open(url) {
   }
   await sleep(800);
   await evaluate(`(() => {
-    const dismiss = document.querySelector('button[aria-label="关闭这条提示"]');
-    if (dismiss) dismiss.click();
-    return !!dismiss;
+    const b = document.querySelector('button[aria-label=${JSON.stringify(L[lang].dismiss)}]');
+    if (b) b.click();
+    return !!b;
   })()`).catch(() => false);
   await sleep(350);
 }
@@ -179,7 +218,7 @@ async function waitForFreshTick() {
 }
 
 /** 抓一整屏弹窗，高度按最后一行完整可见的底部裁 */
-async function shoot(name) {
+async function shoot(name, dir = OUT_RAW) {
   const height = await evaluate(`(() => {
     const max = ${POPUP_MAX_HEIGHT};
     let bottom = 0;
@@ -195,32 +234,32 @@ async function shoot(name) {
     captureBeyondViewport: true,
     clip: { x: 0, y: 0, width: POPUP_WIDTH, height, scale: 1 },
   });
-  writeFileSync(join(OUT_RAW, `${name}.png`), Buffer.from(shot.data, 'base64'));
-  console.log(`  弹窗 ${name}.png  ${POPUP_WIDTH * 2}×${height * 2}`);
+  writeFileSync(join(dir, `${name}.png`), Buffer.from(shot.data, 'base64'));
+  console.log(`  弹窗 ${name}.png  ${POPUP_WIDTH * 2}×${height * 2}  → ${dir.replace(ROOT, '.')}`);
 }
 
-console.log('① 抓弹窗');
+console.log('① 抓弹窗（中文）');
 
 await viewport(POPUP_WIDTH, POPUP_VIEWPORT);
 
-await open(`${PAGE}?demo`);
+await open(`${PAGE}?demo`, 'zh');
 await waitForFreshTick();
 await shoot('1-list');
 
-await click('button[aria-label="切换到深色"]');
+await click(L.zh.dark);
 await sleep(700);
 await waitForFreshTick();
 await shoot('2-dark');
 
-await open(`${PAGE}?demo`);
-await click('button[aria-label="添加账户"]');
+await open(`${PAGE}?demo`, 'zh');
+await click(L.zh.add);
 await sleep(500);
-await clickText('二维码');
+await clickText(L.zh.qr);
 await sleep(600);
 await shoot('3-scan');
 
-await open(`${PAGE}?demo`);
-await click('button[aria-label="设置"]');
+await open(`${PAGE}?demo`, 'zh');
+await click(L.zh.settings);
 await sleep(700);
 await shoot('4-backup');
 
@@ -236,8 +275,48 @@ for (const [raw, doc] of Object.entries(README_NAMES)) {
 }
 console.log(`  → ${OUT_DOCS}`);
 
+console.log('② 抓弹窗（英文）');
+
+/**
+ * 英文这套不能重开页面：语言偏好存进加密保险柜，`?demo` 重载会重新播种，
+ * 偏好跟着丢。所以先走产品路径把语言切成英文，之后全程用返回键在应用内移动。
+ */
+await open(`${PAGE}?demo`, 'zh');
+await click(L.zh.settings);
+await sleep(700);
+await click(L.zh.language);
+await sleep(400);
+await clickText(L.zh.english);
+await sleep(800);
+
+// 切完语言就停在设置页 —— 正好是第 4 张
+await shoot('4-backup', OUT_RAW_EN);
+
+await click(L.en.back);
+await sleep(700);
+await waitForFreshTick();
+await shoot('1-list', OUT_RAW_EN);
+
+await click(L.en.dark);
+await sleep(700);
+await waitForFreshTick();
+await shoot('2-dark', OUT_RAW_EN);
+
+await click(L.en.light);
+await sleep(700);
+await click(L.en.add);
+await sleep(500);
+await clickText(L.en.qr);
+await sleep(600);
+await shoot('3-scan', OUT_RAW_EN);
+
+for (const [raw, doc] of Object.entries(README_NAMES)) {
+  copyFileSync(join(OUT_RAW_EN, `${raw}.png`), join(OUT_DOCS_EN, `${doc}.png`));
+}
+console.log(`  → ${OUT_DOCS_EN}`);
+
 if (!rawOnly) {
-  console.log('② 渲染排版稿');
+  console.log('③ 渲染排版稿');
   const boards = [
     { query: 'shot=1', out: 'screenshot-1-list.png', width: 640, height: 400 },
     { query: 'shot=2', out: 'screenshot-2-dark.png', width: 640, height: 400 },
@@ -245,29 +324,45 @@ if (!rawOnly) {
     { query: 'shot=4', out: 'screenshot-4-backup.png', width: 640, height: 400 },
     { query: 'board=promo', out: 'promo-440x280.png', width: 220, height: 140 },
   ];
-  for (const board of boards) {
-    await viewport(board.width, board.height);
-    await send('Page.navigate', { url: `${BOARD}?${board.query}` });
-    // 等所有 <img>（弹窗原图 + 图标）真正解码完，否则会截到空白框
-    for (let i = 0; i < 60; i += 1) {
-      await sleep(150);
-      const done = await evaluate(
-        `[...document.images].every((img) => img.complete && img.naturalWidth > 0)`,
-      ).catch(() => false);
-      if (done) break;
+  const runs = [
+    { lang: 'zh', dir: OUT_STORE },
+    { lang: 'en', dir: OUT_STORE_EN },
+  ];
+  for (const run of runs) {
+    for (const board of boards) {
+      await viewport(board.width, board.height);
+      await send('Page.navigate', {
+        url: `${BOARD}?${board.query}&lang=${run.lang}`,
+      });
+      // 等所有 <img>（弹窗原图 + 图标）真正解码完，否则会截到空白框
+      for (let i = 0; i < 60; i += 1) {
+        await sleep(150);
+        const done = await evaluate(
+          `[...document.images].every((img) => img.complete && img.naturalWidth > 0)`,
+        ).catch(() => false);
+        if (done) break;
+      }
+      await sleep(400);
+      const shot = await send('Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: true,
+        clip: { x: 0, y: 0, width: board.width, height: board.height, scale: 1 },
+      });
+      writeFileSync(join(run.dir, board.out), Buffer.from(shot.data, 'base64'));
+      console.log(
+        `  ${board.out}  ${board.width * 2}×${board.height * 2}  → ${run.dir.replace(ROOT, '.')}`,
+      );
     }
-    await sleep(400);
-    const shot = await send('Page.captureScreenshot', {
-      format: 'png',
-      captureBeyondViewport: true,
-      clip: { x: 0, y: 0, width: board.width, height: board.height, scale: 1 },
-    });
-    writeFileSync(join(OUT_STORE, board.out), Buffer.from(shot.data, 'base64'));
-    console.log(`  ${board.out}  ${board.width * 2}×${board.height * 2}`);
   }
 }
 
 ws.close();
 chrome.kill('SIGKILL');
-rmSync(PROFILE, { recursive: true, force: true });
+// 等 Chrome 真的退出再删 profile：刚 kill 时它还在写 Default/，rmSync 会撞 ENOTEMPTY
+await sleep(400);
+try {
+  rmSync(PROFILE, { recursive: true, force: true });
+} catch {
+  // 临时目录，删不掉也不影响产物
+}
 console.log('完成');

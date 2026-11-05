@@ -12,9 +12,11 @@ const synthSecret = (seed: number): string =>
 
 const SERVICES = [
   ['GitHub', 'stone'],
-  ['阿里云', 'stone@example.com'],
-  ['腾讯云', 'stone@example.com'],
-  ['Cloudflare', 'stone@example.com'],
+  // 发行方一律用官方拉丁名：otpauth 里的 issuer 本来就是 ASCII 为主，
+  // 而且截图要同时给中英文两套素材用，混着汉字在英文版里像没本地化完
+  ['Aliyun', 'stone@example.com'],
+  ['Tencent', 'stone@example.com'],
+  ['Cloudflare', 'stone'],
   ['Amazon Web Services', 'stone@example.com'],
   ['Google', 'stone@example.com'],
   ['Dropbox', 'stone@example.com'],
@@ -30,7 +32,7 @@ const SERVICES = [
   ['V2EX', 'stone'],
   ['Linode', 'stone@example.com'],
   ['Stripe', 'stone@example.com'],
-  ['微信开放平台', 'stone@example.com'],
+  ['WeChat Open Platform', 'stone@example.com'],
 ] as const;
 
 export const DEMO_ACCOUNTS: Account[] = SERVICES.map(([issuer, account], i) => ({
