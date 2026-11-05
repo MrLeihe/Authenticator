@@ -84,7 +84,7 @@ pnpm build        # 产出 dist/
 | `pnpm typecheck` | 两个 TS 工程都要过（`src` 与构建配置） |
 | `pnpm build` | `typecheck` 后产出 `dist/` |
 | `pnpm zip` | 打包成可分发的 zip，附上第三方许可文本 |
-| `pnpm shots` | 重出 README 里的弹窗截图（需先 `pnpm dev`） |
+| `pnpm shots` | 重出中英两套弹窗截图与下载页素材（需先 `pnpm dev`） |
 
 想调样式又不想反复重载扩展，可以直接在浏览器打开 `http://localhost:5173/src/popup/index.html`，非扩展环境下版本号会显示为「开发预览」。
 

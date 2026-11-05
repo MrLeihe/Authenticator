@@ -51,10 +51,11 @@ src/
 scripts/
 ├── make_icons.py            # 纯标准库手写 PNG，出 16 / 32 / 48 / 128 四档图标
 └── shots/
-    ├── capture.mjs          # 用 CDP 抓弹窗截图 → docs/images/（需要 dev server 在跑）
-    ├── board.html           # 下载页用的排版稿（按成品一半尺寸排，2 倍密度截屏）
-    └── raw/                 # 截屏中间产物，不进仓库
+    ├── capture.mjs          # 用 CDP 抓弹窗截图（中英各一套）→ docs/images/，需要 dev server 在跑
+    ├── board.html           # 下载页用的排版稿（按成品一半尺寸排，2 倍密度截屏，?lang=en 出英文版）
+    └── raw/                 # 截屏中间产物，不进仓库；英文套在 raw/en/
 store/                       # 已出图的素材：4 张 1280×800 截图 + 440×280 宣传图
+└── en/                      # 同一套版式的英文版，给 en 语言版本与「全球通用」位置用
 public/
 ├── icons/                   # 扩展图标，四档尺寸同一套几何
 └── _locales/                # manifest 的 name / description 本地化
@@ -62,7 +63,7 @@ docs/                        # 本目录：设计说明、隐私政策、许可�
 ├── DESIGN.md
 ├── PRIVACY.md
 ├── THIRD_PARTY_LICENSES.md
-└── images/                  # README 用的弹窗截图（pnpm shots 产出）
+└── images/                  # README 用的弹窗截图（pnpm shots 产出）；en/ 是英文界面那套
 ```
 
 三条纪律：

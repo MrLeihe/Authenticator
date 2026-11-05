@@ -22,8 +22,9 @@
 | 权限 | 后台填写的说明（中文） | English |
 | --- | --- | --- |
 | `storage` | 保存加密后的账户密钥、设置与自动备份。数据只在本机，不上传。 | Stores the encrypted account secrets, settings and automatic backups on this device only. Nothing is uploaded. |
+| `activeTab` | 仅用于「扫描此页面上的二维码」：用户点开扩展、并主动按下该按钮时，截取当前标签页的一张画面用于本地识别二维码。授权不常驻，只对当前标签页、且只在打开扩展的这一次有效；不按按钮不截任何东西，截图只在内存中解码，不写盘、不上传。 | Only for "Scan this page": when the user opens the extension and presses that button, one frame of the current tab is captured and decoded locally. The grant is not persistent — it covers that single tab, only from the moment the extension was opened. Nothing is captured unless the button is pressed, and the frame is decoded in memory, never written to disk or uploaded. |
 
-V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` 三行；**现在一条都不申请**。
+V1.1 若加上右键插入，再补 `contextMenus` / `scripting`；**`activeTab` 已经在 V1.0 就申请了**，别把它当成 V1.1 的待办。
 
 - 无 `host_permissions`（这是过审的关键差异点，可以在备注里主动写明）
 - 无远程代码、无 `eval`、无 CDN
@@ -74,7 +75,7 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 >
 > **Your data stays with you**
 >
-> - No network, no account, no telemetry, no in-app purchases. The only permission requested is `storage`; there is no access to any website
+> - No network, no account, no telemetry, no in-app purchases. Two permissions only: `storage` for the encrypted vault, and `activeTab` for the single-frame capture behind "Scan this page" — no host permissions, so no access to any site by default
 > - Secrets are always stored encrypted (AES-256-GCM). Password protection is optional
 > - A recovery code gets you back in if you forget the password; an encrypted backup is kept daily (up to 7 copies)
 > - Export an encrypted backup, or plaintext URIs to move to another authenticator
@@ -85,21 +86,28 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 
 ## 4. 图片素材
 
-| 素材 | 规格 | 文件 |
-| --- | --- | --- |
-| 商店图标 | 128×128 PNG | `public/icons/128.png` |
-| 截图 1 · 列表 | 1280×800 PNG | `store/screenshot-1-list.png` |
-| 截图 2 · 暗色 | 1280×800 PNG | `store/screenshot-2-dark.png` |
-| 截图 3 · 扫码 | 1280×800 PNG | `store/screenshot-3-scan.png` |
-| 截图 4 · 备份与恢复 | 1280×800 PNG | `store/screenshot-4-backup.png` |
-| 小宣传图 | 440×280 PNG | `store/promo-440x280.png` |
+| 素材 | 规格 | 中文版 | 英文版 |
+| --- | --- | --- | --- |
+| 商店图标 | 128×128 PNG | `public/icons/128.png` | 同左（图标不分语言） |
+| 截图 1 · 列表 | 1280×800 PNG | `store/screenshot-1-list.png` | `store/en/screenshot-1-list.png` |
+| 截图 2 · 暗色 | 1280×800 PNG | `store/screenshot-2-dark.png` | `store/en/screenshot-2-dark.png` |
+| 截图 3 · 扫码 | 1280×800 PNG | `store/screenshot-3-scan.png` | `store/en/screenshot-3-scan.png` |
+| 截图 4 · 备份与恢复 | 1280×800 PNG | `store/screenshot-4-backup.png` | `store/en/screenshot-4-backup.png` |
+| 小宣传图 | 440×280 PNG | `store/promo-440x280.png` | `store/en/promo-440x280.png` |
+
+后台对应位置：
+
+- `zh-CN` 语言版本 → 用中文那套
+- `en` 语言版本 → 用英文那套
+- **全球通用的屏幕截图**（必填）→ 用英文那套：除中文外所有语种的界面都是英文（`resolveLang` 只认 `zh`），中文图在这批用户眼里和实际界面对不上
 
 重新生成：
 
 1. 图标：`python3 scripts/make_icons.py`（纯标准库，手写 PNG，无外部依赖）
 2. 截图与宣传图：`pnpm dev` 起本地服务后跑 `pnpm shots`。脚本会用 CDP 驱动本机 Chrome 抓四张弹窗原图（`scripts/shots/raw/`，不进仓库），复制一份给 README 用（`docs/images/`），再按 `scripts/shots/board.html` 渲染出 `store/` 里的 1280×800 与 440×280 —— 排版稿按成品一半尺寸写（640×400 / 220×140），2 倍密度截屏，所以不需要任何缩放。
+3. 英文套是同一趟跑出来的：脚本先在设置页把界面语言切成 English，再靠返回键在应用内走完四屏。**不能重开页面**——语言偏好存在加密保险库里，`?demo` 重载会重新播种，偏好跟着丢。dev server 不在 5173 时用 `SHOTS_BASE=http://localhost:5273 pnpm shots` 覆盖。
 
-界面每改一次就该重跑一次 `pnpm shots`：`store/` 里的图和 README 里的图是同一批原图，界面动了却只更新其中一边，就会出现「商店图还是老界面」这种打回理由。
+界面每改一次就该重跑一次 `pnpm shots`：`store/` 里的图、`store/en/` 里的图和两版 README 里的图是同一批原图，界面动了却只更新其中一边，就会出现「商店图还是老界面」这种打回理由。
 
 截图里的账户名全部是 `example.com` 之类的合成数据，密钥由固定种子生成，**没有一条真实账户**；列表里的验证码在生成截图时也看不出真实密钥（截图为静态图片，码早已过期）。
 
@@ -120,6 +128,16 @@ V1.1 若加上右键插入，再补 `contextMenus` / `scripting` / `activeTab` �
 > This extension has no host permissions and makes no network requests. All code is bundled; there is no remote script and no `eval`. It requests two permissions: `storage` for the encrypted vault, settings and local backups, and `activeTab` solely for the "Scan this page" button — one capture of the current tab, decoded in memory, never written to disk or uploaded. To try it: click the toolbar icon (no password is required to start), then add an account by pasting any `otpauth://` URI, uploading a QR screenshot, or pressing "Scan this page" on any site showing a QR code. No sign-in or test account is required.
 
 ## 7. 提交前自查
+
+账号侧（任意一项没做，前台填得再全也提交不了）：
+
+- [ ] 开发者账号已付一次性 $5 注册费
+- [ ] 发布用的 Google 账号**已开启两步验证**（2SV），否则上传 zip 会直接失败
+- [ ] 后台「账号」页填了联系邮箱并**完成验证**（没验证时提交按钮会被拦下，并提示去「账号」标签页）
+- [ ] 交易者声明选**非交易者（non-trader）**：选交易者会把联系地址公开在商品详情页
+- [ ] 隐私实务页最底部三项承诺（不出售数据 / 不用于无关用途 / 不用于信贷评估）全部勾选
+
+产品侧：
 
 - [x] `pnpm test && pnpm typecheck && pnpm build` 全绿（244 断言 / 13 个测试文件）
 - [x] 产物里没有 `localhost` 残留（`grep -r localhost dist` 为空）

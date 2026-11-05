@@ -48,12 +48,12 @@ Milestones P0–P7 are all done: scaffold → algorithms → main UI → vault �
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/popup-1-list.png" width="300" alt="Account list, light"></td>
-    <td align="center"><img src="docs/images/popup-2-dark.png" width="300" alt="Account list, dark"></td>
+    <td align="center"><img src="docs/images/en/popup-1-list.png" width="300" alt="Account list, light"></td>
+    <td align="center"><img src="docs/images/en/popup-2-dark.png" width="300" alt="Account list, dark"></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/popup-3-add.png" width="300" alt="Add account by QR scan"></td>
-    <td align="center"><img src="docs/images/popup-4-settings.png" width="300" alt="Settings"></td>
+    <td align="center"><img src="docs/images/en/popup-3-add.png" width="300" alt="Add account by QR scan"></td>
+    <td align="center"><img src="docs/images/en/popup-4-settings.png" width="300" alt="Settings"></td>
   </tr>
 </table>
 
@@ -84,7 +84,7 @@ Requires Node.js 20+ and pnpm.
 | `pnpm typecheck` | Both TS projects must pass (`src` and the build config) |
 | `pnpm build` | `typecheck` then emit `dist/` |
 | `pnpm zip` | Package a distributable zip, with the third-party license text bundled in |
-| `pnpm shots` | Re-capture the popup screenshots used in this README (needs `pnpm dev`) |
+| `pnpm shots` | Re-capture both the Chinese and English screenshot sets (needs `pnpm dev`) |
 
 To iterate on styling without reloading the extension, open `http://localhost:5173/src/popup/index.html` directly — outside the extension the version label reads "dev preview".
 
